@@ -1,2 +1,3 @@
-# classification
- implementation of common classification model
+# Classification
+
+Implementation of common classification model
