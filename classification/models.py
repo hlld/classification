@@ -8,9 +8,9 @@ from classification.modules import Conv, Bottleneck, GlobalPool
 from classification.tools import select_device
 
 
-class Model(nn.Module):
+class _BaseModel(nn.Module):
     def __init__(self, in_channels):
-        super(Model, self).__init__()
+        super(_BaseModel, self).__init__()
         self.in_channels = in_channels
         self.stem = nn.Sequential()
         self.layers = nn.Sequential()
@@ -39,16 +39,43 @@ class Model(nn.Module):
                 m.weight.data.normal_(0, 0.01)
                 m.bias.data.zero_()
 
+
+class Model(nn.Module):
+    def __init__(self, 
+                 in_channels, 
+                 num_classes, 
+                 model_type, 
+                 **kwargs):
+        super(Model, self).__init__()
+        if 'mlp' in model_type:
+            self.model = MLP(in_channels,
+                             num_classes,
+                             **kwargs)
+        elif 'vgg' in model_type:
+            self.model = VGGNet(in_channels,
+                                num_classes,
+                                model_type,
+                                **kwargs)
+        elif 'resnet' in model_type:
+            self.model = ResNet(in_channels,
+                                num_classes,
+                                model_type)
+        else:
+            raise ValueError('Unknown type %s' % model_type)
+
+    def forward(self, x):
+        return self.model(x)
+
     def profile(self,
                 device,
                 input_size=224,
                 verbose=False):
         inputs = torch.rand((1,
-                             self.in_channels,
+                             self.model.in_channels,
                              input_size,
                              input_size), device=device)
         # Backup model to avoid distributed training error
-        flops, params = profile(deepcopy(self),
+        flops, params = profile(deepcopy(self.model),
                                 inputs=(inputs,),
                                 verbose=verbose)
         # Flops in billion, params in million
@@ -58,7 +85,23 @@ class Model(nn.Module):
         return flops, params
 
 
-class VGGNet(Model):
+class MLP(_BaseModel):
+    def __init__(self,
+                 in_channels,
+                 num_classes,
+                 hidden_channels=2048,
+                 dropout=0.5):
+        super(MLP, self).__init__(in_channels)
+        logits = [nn.Linear(in_channels, hidden_channels),
+                  nn.ReLU(inplace=True),
+                  nn.Dropout(dropout, inplace=True),
+                  nn.Linear(hidden_channels, num_classes)]
+        self.logits = nn.Sequential(*logits)
+        self.num_classes = num_classes
+        self._initialize_weights()
+
+
+class VGGNet(_BaseModel):
     def __init__(self,
                  in_channels,
                  num_classes,
@@ -85,6 +128,7 @@ class VGGNet(Model):
             in_channels = out
         self.layers = nn.Sequential(*layers)
         logits = [nn.Linear(in_channels, hidden_channels),
+                  nn.ReLU(inplace=True),
                   nn.Dropout(dropout, inplace=True),
                   nn.Linear(hidden_channels, num_classes)]
         self.logits = nn.Sequential(*logits)
@@ -115,7 +159,7 @@ class VGGNet(Model):
         return nn.Sequential(*layer)
 
 
-class ResNet(Model):
+class ResNet(_BaseModel):
     def __init__(self,
                  in_channels,
                  num_classes,
@@ -219,25 +263,16 @@ class ResNet(Model):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_type', type=str, default='resnet50',
+    parser.add_argument('--model_type', type=str, default='resnet18',
                         help='model type')
     parser.add_argument('--device', type=int, default=0,
                         help='cuda device')
     opt = parser.parse_args()
 
     device = select_device(opt.device)
-    if 'vgg' in opt.model_type:
-        model = VGGNet(in_channels=3,
-                       num_classes=1000,
-                       model_type=opt.model_type,
-                       hidden_channels=2048,
-                       dropout=0.5)
-    elif 'resnet' in opt.model_type:
-        model = ResNet(in_channels=3,
-                       num_classes=1000,
-                       model_type=opt.model_type)
-    else:
-        raise ValueError('Unknown type %s' % opt.model_type)
+    model = Model(in_channels=3, 
+                  num_classes=1000, 
+                  model_type=opt.model_type)
     model = model.to(device).train()
     model.profile(device, input_size=224)
     for name, val in model.named_parameters():

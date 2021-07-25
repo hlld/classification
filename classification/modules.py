@@ -120,7 +120,7 @@ class GlobalPool(nn.Module):
             raise ValueError('Unknown type %s' % pooling_type)
 
     def forward(self, x):
-        if x.shape[2] == 1 and x.shape[3] == 1:
+        if len(x.shape) != 4 or (x.shape[2] == 1 and x.shape[3] == 1):
             return x
         if self.use_max_pool:
             return F.max_pool2d(x,
