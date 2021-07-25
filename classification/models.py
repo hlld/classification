@@ -63,6 +63,7 @@ class VGGNet(Model):
                  in_channels,
                  num_classes,
                  model_type='vgg16',
+                 hidden_channels=2048,
                  dropout=0.5):
         super(VGGNet, self).__init__(in_channels)
         if model_type == 'vgg16':
@@ -83,9 +84,9 @@ class VGGNet(Model):
                                            max_pool=pool))
             in_channels = out
         self.layers = nn.Sequential(*layers)
-        logits = [nn.Linear(in_channels, 2048),
+        logits = [nn.Linear(in_channels, hidden_channels),
                   nn.Dropout(dropout, inplace=True),
-                  nn.Linear(2048, num_classes)]
+                  nn.Linear(hidden_channels, num_classes)]
         self.logits = nn.Sequential(*logits)
         self.num_classes = num_classes
         self.model_type = model_type
@@ -229,6 +230,7 @@ if __name__ == "__main__":
         model = VGGNet(in_channels=3,
                        num_classes=1000,
                        model_type=opt.model_type,
+                       hidden_channels=2048,
                        dropout=0.5)
     elif 'resnet' in opt.model_type:
         model = ResNet(in_channels=3,
