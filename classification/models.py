@@ -8,43 +8,11 @@ from classification.modules import Conv, Bottleneck, GlobalPool
 from classification.tools import select_device
 
 
-class _BaseModel(nn.Module):
-    def __init__(self, in_channels):
-        super(_BaseModel, self).__init__()
-        self.in_channels = in_channels
-        self.stem = nn.Sequential()
-        self.layers = nn.Sequential()
-        self.pool = GlobalPool('avg')
-        self.logits = nn.Sequential()
-
-    def forward(self, x):
-        x = self.stem(x)
-        x = self.layers(x)
-        x = self.pool(x)
-        x = x.flatten(1, -1)
-        x = self.logits(x)
-        return x
-
-    def _initialize_weights(self):
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2.0 / n))
-                if m.bias is not None:
-                    m.bias.data.zero_()
-            elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(1.0)
-                m.bias.data.zero_()
-            elif isinstance(m, nn.Linear):
-                m.weight.data.normal_(0, 0.01)
-                m.bias.data.zero_()
-
-
 class Model(nn.Module):
-    def __init__(self, 
-                 in_channels, 
-                 num_classes, 
-                 model_type, 
+    def __init__(self,
+                 in_channels,
+                 num_classes,
+                 model_type,
                  **kwargs):
         super(Model, self).__init__()
         if 'mlp' in model_type:
@@ -85,6 +53,38 @@ class Model(nn.Module):
         return flops, params
 
 
+class _BaseModel(nn.Module):
+    def __init__(self, in_channels):
+        super(_BaseModel, self).__init__()
+        self.in_channels = in_channels
+        self.stem = nn.Sequential()
+        self.layers = nn.Sequential()
+        self.pool = nn.Sequential(*[GlobalPool('avg'),
+                                    nn.Flatten(1, -1)])
+        self.logits = nn.Sequential()
+
+    def forward(self, x):
+        x = self.stem(x)
+        x = self.layers(x)
+        x = self.pool(x)
+        x = self.logits(x)
+        return x
+
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, math.sqrt(2.0 / n))
+                if m.bias is not None:
+                    m.bias.data.zero_()
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1.0)
+                m.bias.data.zero_()
+            elif isinstance(m, nn.Linear):
+                m.weight.data.normal_(0, 0.01)
+                m.bias.data.zero_()
+
+
 class MLP(_BaseModel):
     def __init__(self,
                  in_channels,
@@ -92,6 +92,7 @@ class MLP(_BaseModel):
                  hidden_channels=2048,
                  dropout=0.5):
         super(MLP, self).__init__(in_channels)
+        self.pool = nn.Sequential()
         logits = [nn.Linear(in_channels, hidden_channels),
                   nn.ReLU(inplace=True),
                   nn.Dropout(dropout, inplace=True),

@@ -1,7 +1,9 @@
 numpy
 opencv-python
 torch
+torchvision
 pyyaml
 tqdm
 thop
 onnx
+scipy

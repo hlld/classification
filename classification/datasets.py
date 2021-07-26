@@ -1,21 +1,92 @@
-import lzma
+import math
 import os
+import lzma
 import hashlib
+import pickle
+import random
 import tarfile
 import urllib
 import zipfile
 import codecs
 import gzip
 import numpy as np
+import cv2
 import scipy
 import torch
+import torchvision.transforms.functional as functional
 from tqdm import tqdm
+from copy import deepcopy
+from classification.tools import torch_zero_rank_first
+
+
+class DataLoader(torch.utils.data.DataLoader):
+    def __init__(self,
+                 data_root,
+                 data_type,
+                 data_split,
+                 input_size=None,
+                 batch_size=16,
+                 data_augment=False,
+                 hyp_params=None,
+                 download=True,
+                 shuffle=False,
+                 num_workers=0,
+                 local_rank=-1):
+        with torch_zero_rank_first(local_rank):
+            if data_type in ['ilsvrc2012', 'custom']:
+                dataset = ImageFolder(data_root,
+                                      data_split,
+                                      input_size=input_size,
+                                      data_augment=data_augment,
+                                      hyp_params=hyp_params)
+            elif data_type in ['mnist', 'svhn', 'cifar10', 'cifar100']:
+                if data_type == 'mnist':
+                    dataset_builder = MNIST
+                elif data_type == 'svhn':
+                    dataset_builder = SVHN
+                elif data_type == 'cifar10':
+                    dataset_builder = CIFAR10
+                else:
+                    dataset_builder = CIFAR100
+                dataset = dataset_builder(data_root,
+                                          data_split,
+                                          input_size=input_size,
+                                          data_augment=data_augment,
+                                          hyp_params=hyp_params,
+                                          download=download)
+            else:
+                raise ValueError('Unknown type %s' % data_type)
+        batch_size = min(batch_size, len(dataset))
+        num_workers = min([os.cpu_count(),
+                           batch_size,
+                           num_workers])
+        if batch_size == 1:
+            num_workers = 0
+        sampler = None
+        if local_rank != -1:
+            shuffle = False
+            sampler = torch.utils.data.distributed.DistributedSampler(dataset)
+        super(DataLoader, self).__init__(dataset,
+                                         batch_size=batch_size,
+                                         shuffle=shuffle,
+                                         num_workers=num_workers,
+                                         pin_memory=True,
+                                         sampler=sampler)
 
 
 class _BaseDataset(torch.utils.data.Dataset):
     def __init__(self,
-                 data_augment,
-                 hyp_params):
+                 input_size,
+                 data_augment=False,
+                 hyp_params=None):
+        self.input_size = input_size
+        if hyp_params is None:
+            hyp_params = {
+                'flip': 0.5,
+                'crop': 0.5,
+                'mean': [0.5, 0.5, 0.5],
+                'std': [0.5, 0.5, 0.5],
+            }
         self.data_augment = data_augment
         self.hyp_params = hyp_params
 
@@ -65,7 +136,7 @@ class _BaseDataset(torch.utils.data.Dataset):
             except (urllib.error.URLError, IOError) as err:
                 if url[:5] == 'https':
                     url = url.replace('https:', 'http:')
-                    print('Failed download. Trying https -> http instead,'
+                    print('Failed download. Trying https instead of http,'
                           ' Downloading ' + url + ' to ' + fpath)
                     urllib.request.urlretrieve(
                         url,
@@ -134,9 +205,59 @@ class _BaseDataset(torch.utils.data.Dataset):
     def get_target(self, index):
         raise NotImplementedError
 
+    @staticmethod
+    def random_crop(image,
+                    scale=(0.08, 1.0),
+                    ratio=(3 / 4.0, 4 / 3.0),
+                    try_times=10):
+        image = deepcopy(image)
+        height, width = image.shape[:2]
+        area = height * width
+        top, left, h, w = (0, 0, height, width)
+        found_rect = False
+        for _ in range(try_times):
+            target_area = random.uniform(*scale) * area
+            log_ratio = (math.log(ratio[0]), math.log(ratio[1]))
+            aspect_ratio = math.exp(random.uniform(*log_ratio))
+
+            w = int(round(math.sqrt(target_area * aspect_ratio)))
+            h = int(round(math.sqrt(target_area / aspect_ratio)))
+
+            if 0 < w <= width and 0 < h <= height:
+                top = random.randint(0, height - h)
+                left = random.randint(0, width - w)
+                found_rect = True
+        # Fallback to central crop
+        if not found_rect:
+            in_ratio = float(width) / float(height)
+            if in_ratio < min(ratio):
+                w = width
+                h = int(round(w / min(ratio)))
+            elif in_ratio > max(ratio):
+                h = height
+                w = int(round(h * max(ratio)))
+            else:
+                w = width
+                h = height
+            top = (height - h) // 2
+            left = (width - w) // 2
+        return image[top:(top + h), left:(left + w), :]
+
     def __getitem__(self, index):
         image = self.get_image(index)
         target = self.get_target(index)
+        image = image.astype(np.float)
+        if self.data_augment:
+            if random.random() < self.hyp_params['flip']:
+                image = np.fliplr(image)
+            if random.random() < self.hyp_params['crop']:
+                image = self.random_crop(image)
+        image = cv2.resize(image, (self.input_size, self.input_size))
+        image = torch.from_numpy(image)
+        image = functional.normalize(image,
+                                     self.hyp_params['mean'],
+                                     self.hyp_params['std'],
+                                     inplace=True)
         return image, target
 
     def __len__(self):
@@ -147,10 +268,15 @@ class MNIST(_BaseDataset):
     def __init__(self,
                  data_root,
                  data_split,
+                 input_size=None,
                  data_augment=False,
                  hyp_params=None,
                  download=True):
-        super(MNIST, self).__init__(data_augment, hyp_params)
+        if input_size is None:
+            input_size = 28
+        super(MNIST, self).__init__(input_size=input_size,
+                                    data_augment=data_augment,
+                                    hyp_params=hyp_params)
         assert data_split in ['train', 'test']
         self.data_root = data_root
         self.data_split = data_split
@@ -173,14 +299,14 @@ class MNIST(_BaseDataset):
 
     def download(self):
         resources = [
-            ("http://yann.lecun.com/exdb/mnist/train-images-idx3-ubyte.gz",
-             "f68b3c2dcbeaaa9fbdd348bbdeb94873"),
-            ("http://yann.lecun.com/exdb/mnist/train-labels-idx1-ubyte.gz",
-             "d53e105ee54ea40749a09fcbcd1e9432"),
-            ("http://yann.lecun.com/exdb/mnist/t10k-images-idx3-ubyte.gz",
-             "9fb629c4189551a2d022fa330f9573f3"),
-            ("http://yann.lecun.com/exdb/mnist/t10k-labels-idx1-ubyte.gz",
-             "ec29112dd5afa0611ce80d1b7f02629c")
+            ["http://yann.lecun.com/exdb/mnist/train-images-idx3-ubyte.gz",
+             "f68b3c2dcbeaaa9fbdd348bbdeb94873"],
+            ["http://yann.lecun.com/exdb/mnist/train-labels-idx1-ubyte.gz",
+             "d53e105ee54ea40749a09fcbcd1e9432"],
+            ["http://yann.lecun.com/exdb/mnist/t10k-images-idx3-ubyte.gz",
+             "9fb629c4189551a2d022fa330f9573f3"],
+            ["http://yann.lecun.com/exdb/mnist/t10k-labels-idx1-ubyte.gz",
+             "ec29112dd5afa0611ce80d1b7f02629c"]
         ]
         train_path = os.path.join(self.processed_path, self.train_file)
         test_path = os.path.join(self.processed_path, self.test_file)
@@ -237,7 +363,6 @@ class MNIST(_BaseDataset):
 
         with self.open_maybe_compressed_file(path) as f:
             data = f.read()
-
         magic = int(codecs.encode(data[0:4], 'hex'), 16)
         nd = magic % 256
         ty = magic // 256
@@ -276,35 +401,42 @@ class SVHN(_BaseDataset):
     def __init__(self,
                  data_root,
                  data_split,
+                 input_size=None,
                  data_augment=False,
                  hyp_params=None,
                  download=True):
-        super(SVHN, self).__init__(data_augment, hyp_params)
-        assert data_split in ['train', 'test', 'extra']
+        if input_size is None:
+            input_size = 32
+        super(SVHN, self).__init__(input_size=input_size,
+                                   data_augment=data_augment,
+                                   hyp_params=hyp_params)
+        assert data_split in ['train', 'val', 'test']
         resources = {
             'train': ["http://ufldl.stanford.edu/housenumbers/train_32x32.mat",
                       "train_32x32.mat",
                       "e26dedcc434d2e4c54c9b2d4a06d8373"],
+            'val': ["http://ufldl.stanford.edu/housenumbers/extra_32x32.mat",
+                    "extra_32x32.mat",
+                    "a93ce644f1a588dc4d68dda5feec44a7"],
             'test': ["http://ufldl.stanford.edu/housenumbers/test_32x32.mat",
                      "test_32x32.mat",
                      "eb5a983be6a315427106f1b164d9cef3"],
-            'extra': ["http://ufldl.stanford.edu/housenumbers/extra_32x32.mat",
-                      "extra_32x32.mat",
-                      "a93ce644f1a588dc4d68dda5feec44a7"]
         }
         self.data_root = data_root
         self.data_split = data_split
         file_url = resources[data_split][0]
         file_name = resources[data_split][1]
         file_md5 = resources[data_split][2]
-        file_path = os.path.join(self.data_root, file_name)
-        if download and not self.check_integrity(file_path, file_md5):
+        file_path = os.path.join(data_root, file_name)
+        if download and \
+                not self.check_integrity(file_path, file_md5):
             self.download_url(file_url,
-                              self.data_root,
+                              data_root,
                               file_name,
                               file_md5)
             print('Download Done')
-        loaded_mat = scipy.io.loadmat(os.path.join(data_root, file_name))
+        loaded_mat = scipy.io.loadmat(os.path.join(data_root,
+                                                   file_name))
         self.images = np.transpose(loaded_mat['X'], (3, 2, 0, 1))
         # loading from the .mat file gives an np array of type np.uint8
         # converting to np.int64, so that we have a LongTensor after
@@ -321,6 +453,190 @@ class SVHN(_BaseDataset):
 
     def get_image(self, index):
         return self.images[index]
+
+    def get_target(self, index):
+        return int(self.targets[index])
+
+
+class CIFAR10(_BaseDataset):
+    base_path = 'cifar-10-batches-py'
+    data_url = "https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz"
+    file_name = "cifar-10-python.tar.gz"
+    file_md5 = 'c58f30108f718f92721af3b95e74349a'
+    train_list = [
+        ['data_batch_1', 'c99cafc152244af753f735de768cd75f'],
+        ['data_batch_2', 'd4bba439e000b95fd0a9bffe97cbabec'],
+        ['data_batch_3', '54ebc095f3ab1f0389bbae665268c751'],
+        ['data_batch_4', '634d18415352ddfa80567beed471001a'],
+        ['data_batch_5', '482c414d41f54cd18b22e5b47cb7c3cb'],
+    ]
+    test_list = [
+        ['test_batch', '40351d587109b95175f43aff81a1287e'],
+    ]
+    data_meta = {
+        'filename': 'batches.meta',
+        'key': 'label_names',
+        'md5': '5ff9c542aee3614f3951f8cda6e48888',
+    }
+
+    def __init__(self,
+                 data_root,
+                 data_split,
+                 input_size=None,
+                 data_augment=False,
+                 hyp_params=None,
+                 download=True):
+        if input_size is None:
+            input_size = 32
+        super(CIFAR10, self).__init__(input_size=input_size,
+                                      data_augment=data_augment,
+                                      hyp_params=hyp_params)
+        assert data_split in ['train', 'test']
+        self.data_root = data_root
+        self.data_split = data_split
+        if download:
+            if self._check_integrity():
+                print('Files already downloaded and verified')
+            else:
+                self.download_and_extract_archive(self.data_url,
+                                                  data_root,
+                                                  filename=self.file_name,
+                                                  md5=self.file_md5)
+                print('Download Done')
+        if not self._check_integrity():
+            raise RuntimeError('Dataset not found or corrupted')
+        if data_split == 'train':
+            data_list = self.train_list
+        else:
+            data_list = self.test_list
+        self.images = []
+        self.targets = []
+        # Load the picked numpy arrays
+        for file_name, checksum in data_list:
+            file_path = os.path.join(data_root, self.base_path, file_name)
+            with open(file_path, 'rb') as fd:
+                entry = pickle.load(fd, encoding='latin1')
+                self.images.append(entry['data'])
+                if 'labels' in entry:
+                    self.targets.extend(entry['labels'])
+                else:
+                    self.targets.extend(entry['fine_labels'])
+        self.images = np.vstack(self.images).reshape((-1, 3, 32, 32))
+        self.images = self.images.transpose((0, 2, 3, 1))
+        # Load class names
+        file_path = os.path.join(data_root,
+                                 self.base_path,
+                                 self.data_meta['filename'])
+        if not self.check_integrity(file_path, self.data_meta['md5']):
+            raise RuntimeError('Dataset metadata file not found or corrupted')
+        with open(file_path, 'rb') as infile:
+            data = pickle.load(infile, encoding='latin1')
+            self.classes = data[self.data_meta['key']]
+            self.class_map = {
+                cls_name: k for k, cls_name in enumerate(self.classes)}
+
+    def _check_integrity(self):
+        root = self.root
+        for fentry in (self.train_list + self.test_list):
+            file_name, md5 = fentry[0], fentry[1]
+            file_path = os.path.join(root, self.base_folder, file_name)
+            if not self.check_integrity(file_path, md5):
+                return False
+        return True
+
+    def data_length(self):
+        return len(self.images)
+
+    def get_image(self, index):
+        return self.images[index]
+
+    def get_target(self, index):
+        return int(self.targets[index])
+
+
+class CIFAR100(CIFAR10):
+    base_path = 'cifar-100-python'
+    data_url = "https://www.cs.toronto.edu/~kriz/cifar-100-python.tar.gz"
+    file_name = "cifar-100-python.tar.gz"
+    file_md5 = 'eb9058c3a382ffc7106e4002c42a8d85'
+    train_list = [
+        ['train', '16019d7e3df5f24257cddd939b257f8d'],
+    ]
+    test_list = [
+        ['test', 'f0ef6b0ae62326f3e7ffdfab6717acfc'],
+    ]
+    data_meta = {
+        'filename': 'meta',
+        'key': 'fine_label_names',
+        'md5': '7973b15100ade9c7d40fb424638fde48',
+    }
+
+
+class ImageFolder(_BaseDataset):
+    def __init__(self,
+                 data_root,
+                 data_split,
+                 input_size=None,
+                 data_augment=False,
+                 hyp_params=None):
+        if input_size is None:
+            input_size = 224
+        super(ImageFolder, self).__init__(input_size=input_size,
+                                          data_augment=data_augment,
+                                          hyp_params=hyp_params)
+        assert data_split in ['train', 'val', 'test']
+        self.data_root = data_root
+        self.data_split = data_split
+        data_path = os.path.join(data_root, data_split)
+        extensions = ['.jpg', '.jpeg', '.png', '.ppm',
+                      '.bmp', '.pgm', '.tif', '.tiff']
+        classes, class_map = self.find_classes(data_path)
+        samples = self.make_dataset(data_path,
+                                    class_map,
+                                    extensions)
+        if len(samples) == 0:
+            raise RuntimeError('Found 0 files in ' + data_path)
+        self.extensions = extensions
+        self.classes = classes
+        self.class_map = class_map
+        self.samples = samples
+        self.targets = [item[1] for item in samples]
+
+    @staticmethod
+    def find_classes(data_root):
+        classes = [d.name for d in os.scandir(data_root) if d.is_dir()]
+        classes.sort()
+        class_map = {cls_name: k for k, cls_name in enumerate(classes)}
+        return classes, class_map
+
+    @staticmethod
+    def make_dataset(directory,
+                     class_map,
+                     extensions):
+        instances = []
+        directory = os.path.expanduser(directory)
+        for target_class in sorted(class_map.keys()):
+            class_index = class_map[target_class]
+            target_dir = os.path.join(directory, target_class)
+            if not os.path.isdir(target_dir):
+                continue
+            for root, _, file_names in sorted(os.walk(target_dir,
+                                                      followlinks=True)):
+                for name in sorted(file_names):
+                    path = os.path.join(root, name)
+                    if path.lower().endswith(extensions):
+                        instances.append((path, class_index))
+        return instances
+
+    def data_length(self):
+        return len(self.samples)
+
+    def get_image(self, index):
+        file_path = self.samples[index][0]
+        image = cv2.imread(file_path)
+        if image is None:
+            raise ValueError('Missing image %s' % file_path)
+        return image
 
     def get_target(self, index):
         return int(self.targets[index])
