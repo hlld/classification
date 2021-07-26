@@ -7,7 +7,7 @@ Implementation of common classification model
 <details><summary> <b>Expand</b> </summary>
 
 * `2021-07-26` - support basic vision datasets
-* `2021-07-25` - support basic convolutional model
+* `2021-07-25` - support basic convolutional models
 
 </details>
 

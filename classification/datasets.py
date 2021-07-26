@@ -1,17 +1,12 @@
 import math
 import os
-import lzma
-import hashlib
-import pickle
 import random
-import tarfile
-import urllib
-import zipfile
-import codecs
-import gzip
 import numpy as np
 import cv2
 import scipy
+import pickle
+import codecs
+import tarfile
 import torch
 import torchvision.transforms.functional as functional
 from tqdm import tqdm
@@ -79,7 +74,6 @@ class _BaseDataset(torch.utils.data.Dataset):
                  input_size,
                  data_augment=False,
                  hyp_params=None):
-        self.input_size = input_size
         if hyp_params is None:
             hyp_params = {
                 'flip': 0.5,
@@ -87,6 +81,7 @@ class _BaseDataset(torch.utils.data.Dataset):
                 'mean': [0.5, 0.5, 0.5],
                 'std': [0.5, 0.5, 0.5],
             }
+        self.input_size = input_size
         self.data_augment = data_augment
         self.hyp_params = hyp_params
 
@@ -104,6 +99,7 @@ class _BaseDataset(torch.utils.data.Dataset):
 
     @staticmethod
     def check_md5(fpath, target, chunk_size=1024 * 1024):
+        import hashlib
         md5 = hashlib.md5()
         with open(fpath, 'rb') as f:
             for chunk in iter(lambda: f.read(chunk_size), b''):
@@ -129,6 +125,7 @@ class _BaseDataset(torch.utils.data.Dataset):
             print('Using downloaded and verified file ' + fpath)
         else:
             try:
+                import urllib
                 print('Downloading ' + url + ' to ' + fpath)
                 urllib.request.urlretrieve(url,
                                            fpath,
@@ -165,12 +162,14 @@ class _BaseDataset(torch.utils.data.Dataset):
             with tarfile.open(from_path, 'r:xz') as tar:
                 tar.extractall(path=to_path)
         elif from_path.endswith(".gz") and not from_path.endswith(".tar.gz"):
+            import gzip
             to_path = os.path.join(to_path, os.path.splitext(
                 os.path.basename(from_path))[0])
             with open(to_path, "wb") as out_f, \
                     gzip.GzipFile(from_path) as zip_f:
                 out_f.write(zip_f.read())
         elif from_path.endswith(".zip"):
+            import zipfile
             with zipfile.ZipFile(from_path, 'r') as z:
                 z.extractall(to_path)
         else:
@@ -382,8 +381,10 @@ class MNIST(_BaseDataset):
         if not isinstance(path, torch._six.string_classes):
             return path
         if path.endswith('.gz'):
+            import gzip
             return gzip.open(path, 'rb')
         if path.endswith('.xz'):
+            import lzma
             return lzma.open(path, 'rb')
         return open(path, 'rb')
 
