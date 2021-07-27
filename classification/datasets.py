@@ -1,14 +1,14 @@
+import argparse
 import math
 import os
 import random
 import numpy as np
 import cv2
-import scipy
+import scipy.io as sio
 import pickle
 import codecs
 import tarfile
 import torch
-import torchvision.transforms.functional as functional
 from tqdm import tqdm
 from copy import deepcopy
 from classification.tools import torch_zero_rank_first
@@ -74,6 +74,8 @@ class _BaseDataset(torch.utils.data.Dataset):
                  input_size,
                  data_augment=False,
                  hyp_params=None):
+        if isinstance(input_size, int):
+            input_size = (input_size, input_size)
         if hyp_params is None:
             hyp_params = {
                 'flip': 0.5,
@@ -205,16 +207,13 @@ class _BaseDataset(torch.utils.data.Dataset):
         raise NotImplementedError
 
     @staticmethod
-    def random_crop(image,
-                    scale=(0.08, 1.0),
-                    ratio=(3 / 4.0, 4 / 3.0),
-                    try_times=10):
-        image = deepcopy(image)
-        height, width = image.shape[:2]
+    def random_size_rect(height,
+                         width,
+                         scale=(0.08, 1.0),
+                         ratio=(3 / 4.0, 4 / 3.0),
+                         max_times=10):
         area = height * width
-        top, left, h, w = (0, 0, height, width)
-        found_rect = False
-        for _ in range(try_times):
+        for _ in range(max_times):
             target_area = random.uniform(*scale) * area
             log_ratio = (math.log(ratio[0]), math.log(ratio[1]))
             aspect_ratio = math.exp(random.uniform(*log_ratio))
@@ -225,22 +224,79 @@ class _BaseDataset(torch.utils.data.Dataset):
             if 0 < w <= width and 0 < h <= height:
                 top = random.randint(0, height - h)
                 left = random.randint(0, width - w)
-                found_rect = True
+                return top, left, h, w
+
         # Fallback to central crop
-        if not found_rect:
-            in_ratio = float(width) / float(height)
-            if in_ratio < min(ratio):
-                w = width
-                h = int(round(w / min(ratio)))
-            elif in_ratio > max(ratio):
-                h = height
-                w = int(round(h * max(ratio)))
-            else:
-                w = width
-                h = height
-            top = (height - h) // 2
-            left = (width - w) // 2
+        in_ratio = float(width) / float(height)
+        if in_ratio < min(ratio):
+            w = width
+            h = int(round(w / min(ratio)))
+        elif in_ratio > max(ratio):
+            h = height
+            w = int(round(h * max(ratio)))
+        else:
+            w = width
+            h = height
+        top = (height - h) // 2
+        left = (width - w) // 2
+        return top, left, h, w
+
+    def fixed_size_rect(self,
+                        height,
+                        width):
+        th, tw = self.input_size
+        if height == th and width == tw:
+            return 0, 0, height, width
+
+        top = random.randint(0, height - th)
+        left = random.randint(0, width - tw)
+        return top, left, th, tw
+
+    def random_crop(self,
+                    image,
+                    inplace=False):
+        if not inplace:
+            image = deepcopy(image)
+        height, width = image.shape[:2]
+        input_h, input_w = self.input_size
+        padding = None
+        if height < round(1.25 * input_h):
+            padding_h = round(0.25 * input_h + (input_h - height))
+            padding = ((padding_h // 2, padding_h // 2 + padding_h % 2),
+                       (0, 0),
+                       (0, 0))
+            image = np.pad(image,
+                           padding,
+                           mode='constant',
+                           constant_values=0)
+        if width < round(1.25 * input_w):
+            padding_w = round(0.25 * input_w + (input_w - width))
+            padding = ((0, 0),
+                       (padding_w // 2, padding_w // 2 + padding_w % 2),
+                       (0, 0))
+            image = np.pad(image,
+                           padding,
+                           mode='constant',
+                           constant_values=0)
+        if padding is None:
+            top, left, h, w = self.random_size_rect(height, width)
+        else:
+            top, left, h, w = self.fixed_size_rect(height, width)
         return image[top:(top + h), left:(left + w), :]
+
+    def normalize(self,
+                  image,
+                  inplace=False):
+        if not inplace:
+            image = deepcopy(image)
+        mean = np.array(self.hyp_params['mean'], dtype=np.float)
+        std = np.array(self.hyp_params['std'], dtype=np.float)
+        if (std == 0).any():
+            raise ValueError('Normalization division by zero')
+        image /= 255.0
+        image -= mean
+        image /= std
+        return image
 
     def __getitem__(self, index):
         image = self.get_image(index)
@@ -251,12 +307,19 @@ class _BaseDataset(torch.utils.data.Dataset):
                 image = np.fliplr(image)
             if random.random() < self.hyp_params['crop']:
                 image = self.random_crop(image)
-        image = cv2.resize(image, (self.input_size, self.input_size))
+        if image.shape[:2] != self.input_size:
+            interpolation = cv2.INTER_LINEAR
+            if self.data_augment:
+                interpolation = cv2.INTER_AREA
+            image = cv2.resize(image,
+                               (self.input_size[1], self.input_size[0]),
+                               interpolation=interpolation)
+            if len(image.shape) == 2:
+                image = image[:, :, None]
+        image = self.normalize(image, inplace=True)
         image = torch.from_numpy(image)
-        image = functional.normalize(image,
-                                     self.hyp_params['mean'],
-                                     self.hyp_params['std'],
-                                     inplace=True)
+        # Convert to [C, H, W] format
+        image = image.permute((2, 0, 1))
         return image, target
 
     def __len__(self):
@@ -277,10 +340,12 @@ class MNIST(_BaseDataset):
                                     data_augment=data_augment,
                                     hyp_params=hyp_params)
         assert data_split in ['train', 'test']
+        mean, std = (self.hyp_params['mean'][0],
+                     self.hyp_params['std'][0])
+        self.hyp_params['mean'] = mean
+        self.hyp_params['std'] = std
         self.data_root = data_root
         self.data_split = data_split
-        if download:
-            self.download()
         self.raw_path = os.path.join(data_root,
                                      'MNIST',
                                      'raw')
@@ -293,6 +358,8 @@ class MNIST(_BaseDataset):
             data_file = self.train_file
         else:
             data_file = self.test_file
+        if download:
+            self.download()
         self.images, self.targets = torch.load(
                 os.path.join(self.processed_path, data_file))
 
@@ -309,8 +376,7 @@ class MNIST(_BaseDataset):
         ]
         train_path = os.path.join(self.processed_path, self.train_file)
         test_path = os.path.join(self.processed_path, self.test_file)
-        if not os.path.exists(train_path) or \
-                not os.path.exists(test_path):
+        if not os.path.exists(train_path) or not os.path.exists(test_path):
             os.makedirs(self.raw_path, exist_ok=True)
             os.makedirs(self.processed_path, exist_ok=True)
 
@@ -329,55 +395,54 @@ class MNIST(_BaseDataset):
                         self.read_label_file(
                 os.path.join(self.raw_path, 't10k-labels-idx1-ubyte')))
             with open(os.path.join(self.processed_path,
-                                   self.train_file), 'wb') as fd:
-                torch.save(training_set, fd)
+                                   self.train_file), 'wb') as f:
+                torch.save(training_set, f)
             with open(os.path.join(self.processed_path,
-                                   self.test_file), 'wb') as fd:
-                torch.save(test_set, fd)
-            print('Download Done')
+                                   self.test_file), 'wb') as f:
+                torch.save(test_set, f)
+            print('Download complete')
 
     def read_label_file(self, path):
-        with open(path, 'rb') as fd:
-            x = self.read_sn3_pascalvincent_tensor(fd, strict=False)
+        with open(path, 'rb') as f:
+            x = self.read_sn3_pascalvincent_tensor(f, strict=False)
         assert x.dtype == torch.uint8
         assert x.ndimension() == 1
         return x.long()
 
     def read_image_file(self, path):
-        with open(path, 'rb') as fd:
-            x = self.read_sn3_pascalvincent_tensor(fd, strict=False)
+        with open(path, 'rb') as f:
+            x = self.read_sn3_pascalvincent_tensor(f, strict=False)
         assert x.dtype == torch.uint8
         assert x.ndimension() == 3
         return x
 
     def read_sn3_pascalvincent_tensor(self, path, strict=True):
-        if not hasattr(self.read_sn3_pascalvincent_tensor, 'typemap'):
-            self.read_sn3_pascalvincent_tensor.typemap = {
-                8: (torch.uint8, np.uint8, np.uint8),
-                9: (torch.int8, np.int8, np.int8),
-                11: (torch.int16, np.dtype('>i2'), 'i2'),
-                12: (torch.int32, np.dtype('>i4'), 'i4'),
-                13: (torch.float32, np.dtype('>f4'), 'f4'),
-                14: (torch.float64, np.dtype('>f8'), 'f8')}
-
-        with self.open_maybe_compressed_file(path) as f:
+        torch_type_map = {
+            8: (torch.uint8, np.uint8, np.uint8),
+            9: (torch.int8, np.int8, np.int8),
+            11: (torch.int16, np.dtype('>i2'), 'i2'),
+            12: (torch.int32, np.dtype('>i4'), 'i4'),
+            13: (torch.float32, np.dtype('>f4'), 'f4'),
+            14: (torch.float64, np.dtype('>f8'), 'f8')
+        }
+        with self.open_compressed_file(path) as f:
             data = f.read()
         magic = int(codecs.encode(data[0:4], 'hex'), 16)
         nd = magic % 256
         ty = magic // 256
         assert 1 <= nd <= 3
         assert 8 <= ty <= 14
-        m = self.read_sn3_pascalvincent_tensor.typemap[ty]
+        m = torch_type_map[ty]
         s = []
         for k in range(nd):
-            s.append(int(codecs.encode(data[4 * (k + 1): 4 * (k + 2)],
-                                       'hex'), 16))
+            s.append(int(codecs.encode(
+                data[4 * (k + 1): 4 * (k + 2)], 'hex'), 16))
         parsed = np.frombuffer(data, dtype=m[1], offset=(4 * (nd + 1)))
         assert parsed.shape[0] == np.prod(s) or not strict
         return torch.from_numpy(parsed.astype(m[2], copy=False)).view(*s)
 
     @staticmethod
-    def open_maybe_compressed_file(path):
+    def open_compressed_file(path):
         if not isinstance(path, torch._six.string_classes):
             return path
         if path.endswith('.gz'):
@@ -392,7 +457,8 @@ class MNIST(_BaseDataset):
         return len(self.images)
 
     def get_image(self, index):
-        return self.images[index]
+        # Convert to [H, W, C] format
+        return self.images[index].numpy()[:, :, None]
 
     def get_target(self, index):
         return int(self.targets[index])
@@ -429,22 +495,22 @@ class SVHN(_BaseDataset):
         file_name = resources[data_split][1]
         file_md5 = resources[data_split][2]
         file_path = os.path.join(data_root, file_name)
-        if download and \
-                not self.check_integrity(file_path, file_md5):
-            self.download_url(file_url,
-                              data_root,
-                              file_name,
-                              file_md5)
-            print('Download Done')
-        loaded_mat = scipy.io.loadmat(os.path.join(data_root,
-                                                   file_name))
-        self.images = np.transpose(loaded_mat['X'], (3, 2, 0, 1))
-        # loading from the .mat file gives an np array of type np.uint8
+        if download:
+            if not self.check_integrity(file_path, file_md5):
+                self.download_url(file_url,
+                                  data_root,
+                                  file_name,
+                                  file_md5)
+                print('Download complete')
+        loaded_mat = sio.loadmat(os.path.join(data_root, file_name))
+        # Convert to [B, H, W, C] format
+        self.images = np.transpose(loaded_mat['X'], (3, 0, 1, 2))
+        # Loading from the .mat file gives an np array of type np.uint8
         # converting to np.int64, so that we have a LongTensor after
         # the conversion from the numpy array
         # the squeeze is needed to obtain a 1D tensor
         self.targets = loaded_mat['y'].astype(np.int64).squeeze()
-        # the svhn dataset assigns the class label "10" to the digit 0
+        # The svhn dataset assigns the class label "10" to the digit 0
         # this makes it inconsistent with several loss functions
         # which expect the class labels to be in the range [0, C-1]
         np.place(self.targets, self.targets == 10, 0)
@@ -496,34 +562,32 @@ class CIFAR10(_BaseDataset):
         self.data_root = data_root
         self.data_split = data_split
         if download:
-            if self._check_integrity():
-                print('Files already downloaded and verified')
-            else:
+            if not self._check_integrity():
                 self.download_and_extract_archive(self.data_url,
                                                   data_root,
                                                   filename=self.file_name,
                                                   md5=self.file_md5)
-                print('Download Done')
+                print('Download complete')
         if not self._check_integrity():
             raise RuntimeError('Dataset not found or corrupted')
         if data_split == 'train':
             data_list = self.train_list
         else:
             data_list = self.test_list
-        self.images = []
-        self.targets = []
+        images, targets = [], []
         # Load the picked numpy arrays
         for file_name, checksum in data_list:
             file_path = os.path.join(data_root, self.base_path, file_name)
-            with open(file_path, 'rb') as fd:
-                entry = pickle.load(fd, encoding='latin1')
-                self.images.append(entry['data'])
+            with open(file_path, 'rb') as f:
+                entry = pickle.load(f, encoding='latin1')
+                images.append(entry['data'])
                 if 'labels' in entry:
-                    self.targets.extend(entry['labels'])
+                    targets.extend(entry['labels'])
                 else:
-                    self.targets.extend(entry['fine_labels'])
-        self.images = np.vstack(self.images).reshape((-1, 3, 32, 32))
-        self.images = self.images.transpose((0, 2, 3, 1))
+                    targets.extend(entry['fine_labels'])
+        images = np.vstack(images).reshape((-1, 3, 32, 32))
+        self.images = images.transpose((0, 2, 3, 1))
+        self.targets = targets
         # Load class names
         file_path = os.path.join(data_root,
                                  self.base_path,
@@ -533,14 +597,15 @@ class CIFAR10(_BaseDataset):
         with open(file_path, 'rb') as infile:
             data = pickle.load(infile, encoding='latin1')
             self.classes = data[self.data_meta['key']]
-            self.class_map = {
-                cls_name: k for k, cls_name in enumerate(self.classes)}
+            self.class_map = \
+                {cls_name: k for k, cls_name in enumerate(self.classes)}
 
     def _check_integrity(self):
-        root = self.root
         for fentry in (self.train_list + self.test_list):
             file_name, md5 = fentry[0], fentry[1]
-            file_path = os.path.join(root, self.base_folder, file_name)
+            file_path = os.path.join(self.data_root,
+                                     self.base_path,
+                                     file_name)
             if not self.check_integrity(file_path, md5):
                 return False
         return True
@@ -589,8 +654,8 @@ class ImageFolder(_BaseDataset):
         self.data_root = data_root
         self.data_split = data_split
         data_path = os.path.join(data_root, data_split)
-        extensions = ['.jpg', '.jpeg', '.png', '.ppm',
-                      '.bmp', '.pgm', '.tif', '.tiff']
+        extensions = ('.jpg', '.jpeg', '.png', '.ppm',
+                      '.bmp', '.pgm', '.tif', '.tiff')
         classes, class_map = self.find_classes(data_path)
         samples = self.make_dataset(data_path,
                                     class_map,
@@ -637,7 +702,29 @@ class ImageFolder(_BaseDataset):
         image = cv2.imread(file_path)
         if image is None:
             raise ValueError('Missing image %s' % file_path)
+        # Convert BGR to RGB format
+        image = image[:, :, ::-1]
         return image
 
     def get_target(self, index):
         return int(self.targets[index])
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--data_root', type=str, default='../datasets',
+                        help='data root')
+    parser.add_argument('--data_type', type=str, default='mnist',
+                        help='data type')
+    parser.add_argument('--data_split', type=str, default='train',
+                        help='data split')
+    opt = parser.parse_args()
+
+    dataloader = DataLoader(opt.data_root,
+                            opt.data_type,
+                            opt.data_split,
+                            batch_size=16,
+                            download=True)
+    print('Batch of dataloader', len(dataloader))
+    images, targets = next(iter(dataloader))
+    print(images.shape, targets.shape)
