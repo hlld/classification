@@ -20,7 +20,7 @@ def load_yaml(yaml_path):
 def save_yaml(file_path, yaml_dict):
     with open(file_path, 'w') as fd:
         yaml.dump(yaml_dict,
-                  fd,
+                  stream=fd,
                   sort_keys=False)
 
 
@@ -67,13 +67,13 @@ def torch_zero_rank_first(local_rank):
         torch.distributed.barrier()
 
 
-def decay_lambda(final_ratio, 
-                 total_steps, 
+def decay_lambda(final_ratio,
+                 total_steps,
                  linear_decay=False):
     # Linear or cosine decay
     if linear_decay:
         lambda_fn = lambda x: final_ratio + (1.0 - final_ratio) * (
-            1.0 - x / total_steps)
+                1.0 - x / total_steps)
     else:
         lambda_fn = lambda x: 1.0 + (final_ratio - 1.0) * (
                 (1.0 - math.cos(x * math.pi / total_steps)) / 2)
@@ -115,6 +115,33 @@ class ModelEMA(object):
                     v += (1.0 - decay) * state_dict[k].detach()
 
 
+def select_intersect(source,
+                     target,
+                     exclude):
+    intersect = {}
+    for k, v in source.items():
+        if k in exclude:
+            continue
+        if k in target and v.shape == target[k].shape:
+            intersect[k] = v
+    return intersect
+
+
+def load_model(weights,
+               map_location=None,
+               load_ema=True):
+    # Check and load weights file
+    if not os.path.isfile(weights):
+        raise ValueError('Load %s failed' % weights)
+    ckpt = torch.load(weights, map_location=map_location)
+    if load_ema and ckpt.get('model_ema'):
+        model = ckpt['model_ema']
+    else:
+        model = ckpt['model']
+    model = model.float().eval()
+    return model
+
+
 def strip_optimizer(ckpt_path):
     # Strip optimizer from ckpt_path to finalize training
     device = torch.device('cpu')
@@ -131,5 +158,5 @@ def strip_optimizer(ckpt_path):
         p.requires_grad = False
     torch.save(ckpt, ckpt_path)
     ckpt_size = os.path.getsize(ckpt_path) / 1e6
-    print('Optimizer stripped from %s, '
-          'total file size %g MB' % (ckpt_path, ckpt_size))
+    print('Optimizer stripped from %s,'
+          ' total file size %g MB' % (ckpt_path, ckpt_size))

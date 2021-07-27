@@ -191,14 +191,14 @@ class ResNet(_BaseModel):
         if model_type in ['resnet18', 'resnet34']:
             num_outputs = [64, 128, 256, 512]
             use_residual = True
-        elif model_type in ['resnet20', 'resnet32', 'resnet44', 
+        elif model_type in ['resnet20', 'resnet32', 'resnet44',
                             'resnet56', 'resnet110']:
             num_outputs = [16, 32, 64]
             use_residual = True
         else:
             num_outputs = [256, 512, 1024, 2048]
             use_residual = False
-        if model_type in ['resnet20', 'resnet32', 'resnet44', 
+        if model_type in ['resnet20', 'resnet32', 'resnet44',
                           'resnet56', 'resnet110']:
             down_sample = [False, True, True]
             shortcut_conv = False
@@ -223,8 +223,8 @@ class ResNet(_BaseModel):
             ])
             in_channels = 64
         layers = []
-        for num, out, down in zip(block_num, 
-                                  num_outputs, 
+        for num, out, down in zip(block_num,
+                                  num_outputs,
                                   down_sample):
             layers.append(self._make_layer(in_channels,
                                            out_channels=out,
@@ -271,8 +271,8 @@ if __name__ == "__main__":
     opt = parser.parse_args()
 
     device = select_device(opt.device)
-    model = Model(in_channels=3, 
-                  num_classes=1000, 
+    model = Model(in_channels=3,
+                  num_classes=1000,
                   model_type=opt.model_type)
     model = model.to(device).train()
     model.profile(device, input_size=224)

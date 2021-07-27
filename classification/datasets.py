@@ -91,7 +91,9 @@ class _BaseDataset(torch.utils.data.Dataset):
     def gen_bar_updater():
         pbar = tqdm(total=None)
 
-        def bar_update(count, block_size, total_size):
+        def bar_update(count,
+                       block_size,
+                       total_size):
             if pbar.total is None and total_size:
                 pbar.total = total_size
             progress_bytes = count * block_size
@@ -100,7 +102,9 @@ class _BaseDataset(torch.utils.data.Dataset):
         return bar_update
 
     @staticmethod
-    def check_md5(fpath, target, chunk_size=1024 * 1024):
+    def check_md5(fpath,
+                  target,
+                  chunk_size=1024 * 1024):
         import hashlib
         md5 = hashlib.md5()
         with open(fpath, 'rb') as f:
@@ -108,14 +112,20 @@ class _BaseDataset(torch.utils.data.Dataset):
                 md5.update(chunk)
         return target == md5.hexdigest()
 
-    def check_integrity(self, fpath, md5=None):
+    def check_integrity(self,
+                        fpath,
+                        md5=None):
         if not os.path.isfile(fpath):
             return False
         if md5 is None:
             return True
         return self.check_md5(fpath, md5)
 
-    def download_url(self, url, root, filename=None, md5=None):
+    def download_url(self,
+                     url,
+                     root,
+                     filename=None,
+                     md5=None):
         root = os.path.expanduser(root)
         if not filename:
             filename = os.path.basename(url)
@@ -192,10 +202,15 @@ class _BaseDataset(torch.utils.data.Dataset):
         if not filename:
             filename = os.path.basename(url)
 
-        self.download_url(url, download_root, filename, md5)
+        self.download_url(url,
+                          download_root,
+                          filename,
+                          md5)
         archive = os.path.join(download_root, filename)
         print("Extracting %s to %s" % (archive, extract_root))
-        self.extract_archive(archive, extract_root, remove_finished)
+        self.extract_archive(archive,
+                             extract_root,
+                             remove_finished)
 
     def data_length(self):
         raise NotImplementedError
@@ -215,7 +230,8 @@ class _BaseDataset(torch.utils.data.Dataset):
         area = height * width
         for _ in range(max_times):
             target_area = random.uniform(*scale) * area
-            log_ratio = (math.log(ratio[0]), math.log(ratio[1]))
+            log_ratio = (math.log(ratio[0]),
+                         math.log(ratio[1]))
             aspect_ratio = math.exp(random.uniform(*log_ratio))
 
             w = int(round(math.sqrt(target_area * aspect_ratio)))
@@ -361,7 +377,7 @@ class MNIST(_BaseDataset):
         if download:
             self.download()
         self.images, self.targets = torch.load(
-                os.path.join(self.processed_path, data_file))
+            os.path.join(self.processed_path, data_file))
 
     def download(self):
         resources = [
@@ -389,11 +405,13 @@ class MNIST(_BaseDataset):
             training_set = (self.read_image_file(
                 os.path.join(self.raw_path, 'train-images-idx3-ubyte')),
                             self.read_label_file(
-                os.path.join(self.raw_path, 'train-labels-idx1-ubyte')))
+                                os.path.join(self.raw_path,
+                                             'train-labels-idx1-ubyte')))
             test_set = (self.read_image_file(
                 os.path.join(self.raw_path, 't10k-images-idx3-ubyte')),
                         self.read_label_file(
-                os.path.join(self.raw_path, 't10k-labels-idx1-ubyte')))
+                            os.path.join(self.raw_path,
+                                         't10k-labels-idx1-ubyte')))
             with open(os.path.join(self.processed_path,
                                    self.train_file), 'wb') as f:
                 torch.save(training_set, f)
@@ -416,7 +434,9 @@ class MNIST(_BaseDataset):
         assert x.ndimension() == 3
         return x
 
-    def read_sn3_pascalvincent_tensor(self, path, strict=True):
+    def read_sn3_pascalvincent_tensor(self,
+                                      path,
+                                      strict=True):
         torch_type_map = {
             8: (torch.uint8, np.uint8, np.uint8),
             9: (torch.int8, np.int8, np.int8),
@@ -577,7 +597,9 @@ class CIFAR10(_BaseDataset):
         images, targets = [], []
         # Load the picked numpy arrays
         for file_name, checksum in data_list:
-            file_path = os.path.join(data_root, self.base_path, file_name)
+            file_path = os.path.join(data_root,
+                                     self.base_path,
+                                     file_name)
             with open(file_path, 'rb') as f:
                 entry = pickle.load(f, encoding='latin1')
                 images.append(entry['data'])
@@ -586,6 +608,7 @@ class CIFAR10(_BaseDataset):
                 else:
                     targets.extend(entry['fine_labels'])
         images = np.vstack(images).reshape((-1, 3, 32, 32))
+        # Convert to [H, W, C] format
         self.images = images.transpose((0, 2, 3, 1))
         self.targets = targets
         # Load class names
