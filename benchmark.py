@@ -1,15 +1,15 @@
 import argparse
 from classification.datasets import DataLoader
 from classification.evaluate import evaluate
-from classification.tools import select_device, load_model
+from classification.tools import select_device, load_model, check_input_size
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', type=str, default='',
                         help='weights path')
-    parser.add_argument('--data_root', type=str, default='./datasets',
+    parser.add_argument('--data_root', type=str, default='../datasets',
                         help='dataset root')
-    parser.add_argument('--data_type', type=str, default='cifar10',
+    parser.add_argument('--data_type', type=str, default='mnist',
                         help='dataset type')
     parser.add_argument('--data_split', type=str, default='test',
                         help='train, val or test')
@@ -55,6 +55,8 @@ if __name__ == '__main__':
         raise ValueError('Unknown type %s' % opt.data_type)
     hyp_params = {'mean': opt.image_mean,
                   'std': opt.image_std}
+    if model.model_type != 'mlp':
+        opt.input_size = check_input_size(opt.input_size)
     dataloader = DataLoader(opt.data_root,
                             opt.data_type,
                             data_split=opt.data_split,

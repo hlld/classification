@@ -15,19 +15,20 @@ class Model(object):
                  model_type,
                  **kwargs):
         super(Model, self).__init__()
-        if 'mlp' in model_type:
-            self.model = MLP(in_channels,
-                             num_classes,
-                             **kwargs)
+        if model_type == 'mlp':
+            self.module = MLP(in_channels,
+                              num_classes,
+                              model_type,
+                              **kwargs)
         elif 'vgg' in model_type:
-            self.model = VGGNet(in_channels,
-                                num_classes,
-                                model_type,
-                                **kwargs)
+            self.module = VGGNet(in_channels,
+                                 num_classes,
+                                 model_type,
+                                 **kwargs)
         elif 'resnet' in model_type:
-            self.model = ResNet(in_channels,
-                                num_classes,
-                                model_type)
+            self.module = ResNet(in_channels,
+                                 num_classes,
+                                 model_type)
         else:
             raise ValueError('Unknown type %s' % model_type)
         self.model_ddp = None
@@ -36,47 +37,56 @@ class Model(object):
     def __call__(self, x):
         if self.model_ddp is not None:
             return self.model_ddp(x)
-        return self.model(x)
+        return self.module(x)
 
     def train(self, mode=True):
         if self.model_ddp is not None:
             self.model_ddp.train(mode)
         else:
-            self.model.train(mode)
+            self.module.train(mode)
+        return self
 
     def eval(self):
         if self.model_ddp is not None:
             self.model_ddp.eval()
         else:
-            self.model.eval()
+            self.module.eval()
+        return self
+
+    def to(self, device):
+        if self.model_ddp is not None:
+            self.model_ddp.to(device)
+        else:
+            self.module.to(device)
+        return self
 
     def frozen_bn(self):
         # Frozen batchnorm layers before training
         if self.model_ddp is not None:
-            model = self.model_ddp.module
+            module = self.model_ddp.module
         else:
-            model = self.model
-        for m in model.modules():
+            module = self.module
+        for m in module.modules():
             if isinstance(m, nn.BatchNorm2d):
                 m.eval()
 
     def apply_sync_bn(self, local_rank):
         # Should call before apply_ddp()
         if local_rank != -1:
-            self.model = \
-                torch.nn.SyncBatchNorm.convert_sync_batchnorm(self.model)
+            self.module = \
+                torch.nn.SyncBatchNorm.convert_sync_batchnorm(self.module)
 
     def apply_ddp(self, local_rank):
         if self.model_ddp is None and local_rank != -1:
             self.model_ddp = torch.nn.parallel.DistributedDataParallel(
-                self.model,
+                self.module,
                 device_ids=[local_rank],
                 output_device=local_rank,
                 find_unused_parameters=False)
 
     def apply_ema(self, local_rank):
         if self.model_ema is None and local_rank in [-1, 0]:
-            self.model_ema = ModelEMA(self.model)
+            self.model_ema = ModelEMA(self.module)
 
     def update_ema(self,
                    state_dict=None,
@@ -86,21 +96,23 @@ class Model(object):
                 if self.model_ddp is not None:
                     self.model_ema.update(self.model_ddp.module)
                 else:
-                    self.model_ema.update(self.model)
+                    self.model_ema.update(self.module)
             else:
-                self.model_ema.model.load_state_dict(state_dict)
+                self.model_ema.module.load_state_dict(state_dict)
                 self.model_ema.updates = updates
 
     def profile(self,
                 device,
                 input_size=224,
                 verbose=False):
+        if self.module.model_type == 'mlp':
+            input_size = 1
         inputs = torch.rand((1,
-                             self.model.in_channels,
+                             self.module.in_channels,
                              input_size,
                              input_size), device=device)
         # Backup model to avoid distributed training error
-        flops, params = profile(deepcopy(self.model),
+        flops, params = profile(deepcopy(self.module),
                                 inputs=(inputs,),
                                 verbose=verbose)
         # Flops in billion, params in million
@@ -111,14 +123,18 @@ class Model(object):
 
 
 class _BaseModel(nn.Module):
-    def __init__(self, in_channels):
+    def __init__(self):
         super(_BaseModel, self).__init__()
-        self.in_channels = in_channels
         self.stem = nn.Sequential()
         self.layers = nn.Sequential()
         self.pool = nn.Sequential(*[GlobalPool('avg'),
                                     nn.Flatten(1, -1)])
         self.logits = nn.Sequential()
+        self.model_type = ''
+        self.data_type = ''
+        self.in_channels = -1
+        self.num_classes = -1
+        self.class_map = {}
 
     def forward(self, x):
         x = self.stem(x)
@@ -146,17 +162,20 @@ class MLP(_BaseModel):
     def __init__(self,
                  in_channels,
                  num_classes,
+                 model_type='mlp',
                  hidden_channels=2048,
                  dropout=0.5):
-        super(MLP, self).__init__(in_channels)
+        super(MLP, self).__init__()
         self.pool = nn.Flatten(1, -1)
+        # Dropout must operate with inplace disabled
         logits = [nn.Linear(in_channels, hidden_channels),
                   nn.ReLU(inplace=True),
-                  nn.Dropout(dropout, inplace=True),
+                  nn.Dropout(dropout),
                   nn.Linear(hidden_channels, num_classes)]
         self.logits = nn.Sequential(*logits)
+        self.in_channels = in_channels
         self.num_classes = num_classes
-        self._initialize_weights()
+        self.model_type = model_type
 
 
 class VGGNet(_BaseModel):
@@ -166,7 +185,7 @@ class VGGNet(_BaseModel):
                  model_type='vgg16',
                  hidden_channels=2048,
                  dropout=0.5):
-        super(VGGNet, self).__init__(in_channels)
+        super(VGGNet, self).__init__()
         if model_type == 'vgg16':
             block_num = [2, 2, 3, 3, 3]
         elif model_type == 'vgg19':
@@ -176,6 +195,7 @@ class VGGNet(_BaseModel):
         num_outputs = [64, 128, 256, 512, 512]
         max_pool = [True, True, True, True, False]
         layers = []
+        self.in_channels = in_channels
         for num, out, pool in zip(block_num,
                                   num_outputs,
                                   max_pool):
@@ -185,17 +205,18 @@ class VGGNet(_BaseModel):
                                            max_pool=pool))
             in_channels = out
         self.layers = nn.Sequential(*layers)
+        # Dropout must operate with inplace disabled
         logits = [nn.Linear(in_channels, hidden_channels),
                   nn.ReLU(inplace=True),
-                  nn.Dropout(dropout, inplace=True),
+                  nn.Dropout(dropout),
                   nn.Linear(hidden_channels, num_classes)]
         self.logits = nn.Sequential(*logits)
         self.num_classes = num_classes
         self.model_type = model_type
         self._initialize_weights()
 
-    def _make_layer(self,
-                    in_channels,
+    @staticmethod
+    def _make_layer(in_channels,
                     out_channels,
                     num_blocks,
                     max_pool):
@@ -222,7 +243,7 @@ class ResNet(_BaseModel):
                  in_channels,
                  num_classes,
                  model_type='resnet50'):
-        super(ResNet, self).__init__(in_channels)
+        super(ResNet, self).__init__()
         if model_type == 'resnet18':
             block_num = [2, 2, 2, 2]
         elif model_type == 'resnet34':
@@ -255,6 +276,7 @@ class ResNet(_BaseModel):
         else:
             num_outputs = [256, 512, 1024, 2048]
             use_residual = False
+        self.in_channels = in_channels
         if model_type in ['resnet20', 'resnet32', 'resnet44',
                           'resnet56', 'resnet110']:
             down_sample = [False, True, True]
@@ -296,8 +318,8 @@ class ResNet(_BaseModel):
         self.model_type = model_type
         self._initialize_weights()
 
-    def _make_layer(self,
-                    in_channels,
+    @staticmethod
+    def _make_layer(in_channels,
                     out_channels,
                     down_sample,
                     num_blocks,
@@ -333,5 +355,5 @@ if __name__ == "__main__":
                   model_type=opt.model_type)
     model = model.to(device).train()
     model.profile(device, input_size=224)
-    for name, val in model.named_parameters():
+    for name, val in model.module.named_parameters():
         print(name, val.shape)

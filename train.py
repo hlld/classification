@@ -65,25 +65,29 @@ def train_network(local_rank, opt):
                   'std': opt.image_std}
 
     # Load model into memory
+    if opt.model_type == 'mlp':
+        opt.in_channels *= opt.input_size ** 2
     model = Model(opt.in_channels,
                   num_classes=opt.num_classes,
                   model_type=opt.model_type,
                   hidden_channels=opt.hidden_channels,
                   dropout=opt.dropout)
+    model.to(device).train()
     if opt.weights:
         ckpt = torch.load(opt.weights, map_location=device)
         state_dict = ckpt['model'].float().state_dict()
         state_dict = select_intersect(state_dict,
-                                      model.model.state_dict(),
+                                      model.module.state_dict(),
                                       exclude=[])
-        model.model.load_state_dict(state_dict, strict=False)
+        model.module.load_state_dict(state_dict, strict=False)
         if local_rank in [-1, 0]:
             print('Transferred %g/%g items from %s' % (
                 len(state_dict),
-                len(model.model.state_dict()),
+                len(model.module.state_dict()),
                 opt.weights))
     # Check input size before profile
-    opt.input_size = check_input_size(opt.input_size)
+    if opt.model_type != 'mlp':
+        opt.input_size = check_input_size(opt.input_size)
     if local_rank in [-1, 0]:
         model.profile(device, opt.input_size)
 
@@ -96,26 +100,26 @@ def train_network(local_rank, opt):
         print('Scaled weight decay to %g' % opt.weight_decay)
 
     # Optimizer parameter groups
-    # Apply weight decay except nn.BatchNorm2d
-    params_except, params_decay, params_bias = [], [], []
-    for module in model.model.modules():
+    params_weight, params_bias, params_except = [], [], []
+    for module in model.module.modules():
         if hasattr(module, 'weight'):
             if isinstance(module.weight, nn.Parameter):
                 if isinstance(module, nn.BatchNorm2d):
                     params_except.append(module.weight)
                 else:
-                    params_decay.append(module.weight)
+                    params_weight.append(module.weight)
         if hasattr(module, 'bias'):
             if isinstance(module.bias, nn.Parameter):
                 params_bias.append(module.bias)
-    optimizer = optim.SGD(params_except,
+    optimizer = optim.SGD(params_bias,
                           lr=opt.initial_lr,
                           momentum=opt.momentum,
                           nesterov=True)
-    optimizer.add_param_group({'params': params_decay,
+    optimizer.add_param_group({'params': params_weight,
                                'weight_decay': opt.weight_decay})
-    optimizer.add_param_group({'params': params_bias})
-    del params_except, params_decay, params_bias
+    if len(params_except) > 0:
+        optimizer.add_param_group({'params': params_except})
+    del params_weight, params_bias, params_except
 
     if opt.cosine_lr:
         # Cosine learning rate from 1.0 to final_lr
@@ -185,6 +189,9 @@ def train_network(local_rank, opt):
                                 shuffle=False,
                                 num_workers=opt.workers,
                                 local_rank=-1)
+    # Attach external attributions
+    model.module.data_type = opt.data_type
+    model.module.class_map = trainloader.dataset.class_map
 
     # Start training network
     num_batchs = len(trainloader)
@@ -194,10 +201,10 @@ def train_network(local_rank, opt):
         print('Dataloader workers %g' % trainloader.num_workers)
         print('Input size %g, batch size %g' % (opt.input_size,
                                                 opt.total_batch_size))
-        print('Training %s on %s for %g epochs ...\n' % (opt.model_type,
-                                                         opt.data_type,
-                                                         opt.epochs))
-        print('Logging results to %s' % opt.save_path)
+        print('Training %s on %s for %g epochs' % (opt.model_type,
+                                                   opt.data_type,
+                                                   opt.epochs))
+        print('Logging results to %s\n' % opt.save_path)
 
     for epoch in range(start_epoch, opt.epochs):
         model.train()
@@ -216,7 +223,7 @@ def train_network(local_rank, opt):
         optimizer.zero_grad()
 
         for index, (images, targets) in pbar:
-            images = images.to(device, non_blocking=True)
+            images = images.to(device, non_blocking=True).float()
             targets = targets.to(device)
             total_steps = num_batchs * epoch + index
 
@@ -275,7 +282,7 @@ def train_network(local_rank, opt):
         if local_rank in [-1, 0]:
             results = (0, 0, 0)
             if epoch == opt.epochs - 1 or not opt.notest:
-                results = evaluate(model.model_ema,
+                results = evaluate(model.model_ema.module,
                                    device,
                                    dataloader=testloader,
                                    criterion=criterion)
@@ -286,16 +293,18 @@ def train_network(local_rank, opt):
                 best_accuracy = results[0]
 
             # Log results using tensorboard
-            tb_tags = ['train/loss', 'train/lr0', 'train/lr1', 'train/lr2',
-                       'metrics/top1', 'metrics/top5', 'metrics/loss']
+            num_groups = len(optimizer.param_groups)
+            lr_tags = ['train/lr%d' % k for k in range(num_groups)]
+            tb_tags = ['train/loss', *lr_tags, 'metrics/top1',
+                       'metrics/top5', 'metrics/loss']
             lrs = [params['lr'] for params in optimizer.param_groups]
             tb_vals = list(mean_loss) + lrs + list(results)
             for tag, val in zip(tb_tags, tb_vals):
                 tb_writer.add_scalar(tag, val, epoch)
 
             # Save model to storage
-            half_model_ema = deepcopy(model.model_ema.model).half()
-            half_model = deepcopy(model.model).half()
+            half_model_ema = deepcopy(model.model_ema.module).half()
+            half_model = deepcopy(model.module).half()
             saved_ckpt = {'epoch': epoch,
                           'best_accuracy': best_accuracy,
                           'model': half_model,
@@ -392,7 +401,7 @@ if __name__ == '__main__':
                         help='DDP local port')
     parser.add_argument('--device', type=str, default='0',
                         help='cuda device')
-    parser.add_argument('--workers', type=int, default=4,
+    parser.add_argument('--workers', type=int, default=8,
                         help='dataloader workers')
     opt = parser.parse_args()
 

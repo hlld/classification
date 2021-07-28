@@ -41,6 +41,24 @@ class Activation(nn.Module):
         return self.act(x)
 
 
+class Padding(nn.Module):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 stride=1):
+        super(Padding, self).__init__()
+        num_channels = out_channels - in_channels
+        self.padding = [num_channels // 2,
+                        num_channels // 2 + num_channels % 2]
+        self.stride = stride
+
+    def forward(self, x):
+        return F.pad(x[:, :, ::self.stride, ::self.stride],
+                     [0, 0, 0, 0, *self.padding],
+                     mode='constant',
+                     value=0)
+
+
 class Bottleneck(nn.Module):
     def __init__(self,
                  in_channels,
@@ -62,13 +80,9 @@ class Bottleneck(nn.Module):
                                      stride=stride,
                                      activation='none')
             else:
-                num_channels = out_channels - in_channels
-                padded_channels = [num_channels // 2,
-                                   num_channels // 2 + num_channels % 2]
-                self.shortcut = lambda x: F.pad(x[:, :, ::stride, ::stride],
-                                                [0, 0, 0, 0, *padded_channels],
-                                                mode='constant',
-                                                value=0)
+                self.shortcut = Padding(in_channels,
+                                        out_channels,
+                                        stride=stride)
         if use_residual:
             layers = [Conv(in_channels,
                            out_channels,

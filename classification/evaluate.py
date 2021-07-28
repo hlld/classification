@@ -19,7 +19,7 @@ def evaluate(model,
                                'top5',
                                'loss')
         for images, targets in tqdm(dataloader, desc=desc):
-            images = images.to(device, non_blocking=True)
+            images = images.to(device, non_blocking=True).float()
             if half_precision:
                 images = images.half()
             targets = targets.to(device)

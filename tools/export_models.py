@@ -59,7 +59,8 @@ if __name__ == '__main__':
     print('Loading model from %s ...' % opt.weights)
     model = load_model(opt.weights, device)
     # Dummy random inputs
-    opt.input_size = check_input_size(opt.input_size)
+    if model.model_type != 'mlp':
+        opt.input_size = check_input_size(opt.input_size)
     inputs = torch.randn((opt.batch_size,
                           3,
                           opt.input_size,

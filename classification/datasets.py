@@ -28,6 +28,8 @@ class DataLoader(torch.utils.data.DataLoader):
                  num_workers=0,
                  local_rank=-1):
         with torch_zero_rank_first(local_rank):
+            if hyp_params is not None:
+                hyp_params = deepcopy(hyp_params)
             if data_type in ['ilsvrc2012', 'custom']:
                 dataset = ImageFolder(data_root,
                                       data_split,
@@ -120,6 +122,7 @@ class _BaseDataset(torch.utils.data.Dataset):
         self.input_size = input_size
         self.data_augment = data_augment
         self.hyp_params = hyp_params
+        self.class_map = {}
 
     @staticmethod
     def gen_bar_updater():
@@ -256,11 +259,11 @@ class _BaseDataset(torch.utils.data.Dataset):
         raise NotImplementedError
 
     @staticmethod
-    def random_size_rect(height,
-                         width,
+    def random_size_rect(image,
                          scale=(0.08, 1.0),
                          ratio=(3 / 4.0, 4 / 3.0),
                          max_times=10):
+        height, width = image.shape[:2]
         area = height * width
         for _ in range(max_times):
             target_area = random.uniform(*scale) * area
@@ -291,9 +294,8 @@ class _BaseDataset(torch.utils.data.Dataset):
         left = (width - w) // 2
         return top, left, h, w
 
-    def fixed_size_rect(self,
-                        height,
-                        width):
+    def fixed_size_rect(self, image):
+        height, width = image.shape[:2]
         th, tw = self.input_size
         if height == th and width == tw:
             return 0, 0, height, width
@@ -329,9 +331,9 @@ class _BaseDataset(torch.utils.data.Dataset):
                            mode='constant',
                            constant_values=0)
         if padding is None:
-            top, left, h, w = self.random_size_rect(height, width)
+            top, left, h, w = self.random_size_rect(image)
         else:
-            top, left, h, w = self.fixed_size_rect(height, width)
+            top, left, h, w = self.fixed_size_rect(image)
         return image[top:(top + h), left:(left + w), :]
 
     def normalize(self,
@@ -339,8 +341,8 @@ class _BaseDataset(torch.utils.data.Dataset):
                   inplace=False):
         if not inplace:
             image = deepcopy(image)
-        mean = np.array(self.hyp_params['mean'], dtype=np.float)
-        std = np.array(self.hyp_params['std'], dtype=np.float)
+        mean = np.array(self.hyp_params['mean'], dtype=np.float32)
+        std = np.array(self.hyp_params['std'], dtype=np.float32)
         if (std == 0).any():
             raise ValueError('Normalization division by zero')
         image /= 255.0
@@ -351,7 +353,7 @@ class _BaseDataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         image = self.get_image(index)
         target = self.get_target(index)
-        image = image.astype(np.float)
+        image = image.astype(np.float32)
         if self.data_augment:
             if random.random() < self.hyp_params['flip']:
                 image = np.fliplr(image)
@@ -367,6 +369,7 @@ class _BaseDataset(torch.utils.data.Dataset):
             if len(image.shape) == 2:
                 image = image[:, :, None]
         image = self.normalize(image, inplace=True)
+        image = np.ascontiguousarray(image)
         image = torch.from_numpy(image)
         # Convert to [C, H, W] format
         image = image.permute((2, 0, 1))
@@ -410,6 +413,7 @@ class MNIST(_BaseDataset):
             self.download()
         self.images, self.targets = torch.load(
             os.path.join(self.processed_path, data_file))
+        self.class_map = {k: k for k in range(10)}
 
     def download(self):
         resources = [
@@ -564,6 +568,7 @@ class SVHN(_BaseDataset):
         # this makes it inconsistent with several loss functions
         # which expect the class labels to be in the range [0, C-1]
         np.place(self.targets, self.targets == 10, 0)
+        self.class_map = {k: k for k in range(10)}
 
     def data_length(self):
         return len(self.images)
@@ -648,8 +653,7 @@ class CIFAR10(_BaseDataset):
         with open(file_path, 'rb') as infile:
             data = pickle.load(infile, encoding='latin1')
             self.classes = data[self.data_meta['key']]
-            self.class_map = \
-                {cls_name: k for k, cls_name in enumerate(self.classes)}
+            self.class_map = {name: k for k, name in enumerate(self.classes)}
 
     def _check_integrity(self):
         for fentry in (self.train_list + self.test_list):
@@ -767,11 +771,14 @@ if __name__ == "__main__":
                         help='data type')
     parser.add_argument('--data_split', type=str, default='train',
                         help='data split')
+    parser.add_argument('--input_size', type=int, default=28,
+                        help='input size')
     opt = parser.parse_args()
 
     dataloader = DataLoader(opt.data_root,
                             opt.data_type,
                             opt.data_split,
+                            opt.input_size,
                             batch_size=16,
                             download=True)
     print('Batch of dataloader', len(dataloader))

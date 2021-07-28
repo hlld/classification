@@ -98,11 +98,11 @@ class ModelEMA(object):
     def __init__(self,
                  model,
                  decay=0.9999):
-        self.model = deepcopy(model).eval()
+        self.module = deepcopy(model).eval()
         self.updates = 0
         # Decay exponential ramp (to help early epochs)
         self.decay_lambda = lambda x: decay * (1 - math.exp(-x / 2000))
-        for p in self.model.parameters():
+        for p in self.module.parameters():
             p.requires_grad = False
 
     def update(self, model):
@@ -111,7 +111,7 @@ class ModelEMA(object):
             self.updates += 1
             decay = self.decay_lambda(self.updates)
             state_dict = model.state_dict()
-            for k, v in self.model.state_dict().items():
+            for k, v in self.module.state_dict().items():
                 if v.dtype.is_floating_point:
                     v *= decay
                     v += (1.0 - decay) * state_dict[k].detach()
