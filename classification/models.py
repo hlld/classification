@@ -5,10 +5,10 @@ import torch.nn as nn
 from thop import profile
 from copy import deepcopy
 from classification.modules import Conv, Bottleneck, GlobalPool
-from classification.tools import select_device
+from classification.tools import select_device, ModelEMA
 
 
-class Model(nn.Module):
+class Model(object):
     def __init__(self,
                  in_channels,
                  num_classes,
@@ -30,9 +30,64 @@ class Model(nn.Module):
                                 model_type)
         else:
             raise ValueError('Unknown type %s' % model_type)
+        self.model_ddp = None
+        self.model_ema = None
 
-    def forward(self, x):
+    def __call__(self, x):
+        if self.model_ddp is not None:
+            return self.model_ddp(x)
         return self.model(x)
+
+    def train(self, mode=True):
+        if self.model_ddp is not None:
+            self.model_ddp.train(mode)
+        else:
+            self.model.train(mode)
+
+    def eval(self):
+        if self.model_ddp is not None:
+            self.model_ddp.eval()
+        else:
+            self.model.eval()
+
+    def frozen_bn(self):
+        # Frozen batchnorm layers before training
+        if self.model_ddp is not None:
+            model = self.model_ddp.module
+        else:
+            model = self.model
+        for m in model.modules():
+            if isinstance(m, nn.BatchNorm2d):
+                m.eval()
+
+    def apply_sync_bn(self, local_rank):
+        # Should call before apply_ddp()
+        if local_rank != -1:
+            self.model = \
+                torch.nn.SyncBatchNorm.convert_sync_batchnorm(self.model)
+
+    def apply_ddp(self, local_rank):
+        if self.model_ddp is None and local_rank != -1:
+            self.model_ddp = torch.nn.parallel.DistributedDataParallel(
+                self.model,
+                device_ids=[local_rank],
+                output_device=local_rank,
+                find_unused_parameters=False)
+
+    def apply_ema(self, local_rank):
+        if self.model_ema is None and local_rank in [-1, 0]:
+            self.model_ema = ModelEMA(self.model)
+
+    def update_ema(self, state_dict=None, updates=0):
+        if self.model_ema is not None:
+            if state_dict is None:
+                if self.model_ddp is not None:
+                    self.model_ema.update(self.model_ddp.module)
+                else:
+                    self.model_ema.update(self.model)
+            else:
+                self.model_ema.model.load_state_dict(state_dict)
+                self.model_ema.updates = updates
 
     def profile(self,
                 device,

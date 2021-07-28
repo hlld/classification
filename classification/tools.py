@@ -142,6 +142,15 @@ def load_model(weights,
     return model
 
 
+def check_input_size(input_size, max_stride=32):
+    # Verify img_size is multiple of max_stride
+    check_size = math.ceil(input_size / max_stride) * max_stride
+    if check_size != input_size:
+        print('Updating input size from %d to %d' % (input_size,
+                                                     check_size))
+    return check_size
+
+
 def strip_optimizer(ckpt_path):
     # Strip optimizer from ckpt_path to finalize training
     device = torch.device('cpu')

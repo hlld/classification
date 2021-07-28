@@ -1,10 +1,11 @@
 import argparse
 import sys
-sys.path.append('../')
 import os
 import torch
 import struct
 from pathlib import Path
+
+sys.path.append('../')
 from classification.tools import load_model
 
 

@@ -19,7 +19,7 @@ class DataLoader(torch.utils.data.DataLoader):
                  data_root,
                  data_type,
                  data_split,
-                 input_size=None,
+                 input_size,
                  batch_size=16,
                  data_augment=False,
                  hyp_params=None,
@@ -68,6 +68,42 @@ class DataLoader(torch.utils.data.DataLoader):
                                          pin_memory=True,
                                          sampler=sampler)
 
+    @staticmethod
+    def default_params(data_type):
+        input_size, in_channels, num_classes, image_mean, image_std = \
+            -1, -1, -1, [], []
+        if data_type == 'mnist':
+            input_size = 28
+            in_channels = 1
+            num_classes = 10
+            image_mean = [0.5]
+            image_std = [0.5]
+        elif data_type == 'svhn':
+            input_size = 32
+            in_channels = 3
+            num_classes = 10
+            image_mean = [0.485, 0.456, 0.406]
+            image_std = [0.229, 0.224, 0.225]
+        elif data_type == 'cifar10':
+            input_size = 32
+            in_channels = 3
+            num_classes = 10
+            image_mean = [0.485, 0.456, 0.406]
+            image_std = [0.229, 0.224, 0.225]
+        elif data_type == 'cifar100':
+            input_size = 32
+            in_channels = 3
+            num_classes = 100
+            image_mean = [0.485, 0.456, 0.406]
+            image_std = [0.229, 0.224, 0.225]
+        elif data_type == 'ilsvrc2012':
+            input_size = 224
+            in_channels = 3
+            num_classes = 1000
+            image_mean = [0.485, 0.456, 0.406]
+            image_std = [0.229, 0.224, 0.225]
+        return input_size, in_channels, num_classes, image_mean, image_std
+
 
 class _BaseDataset(torch.utils.data.Dataset):
     def __init__(self,
@@ -77,12 +113,10 @@ class _BaseDataset(torch.utils.data.Dataset):
         if isinstance(input_size, int):
             input_size = (input_size, input_size)
         if hyp_params is None:
-            hyp_params = {
-                'flip': 0.5,
-                'crop': 0.5,
-                'mean': [0.5, 0.5, 0.5],
-                'std': [0.5, 0.5, 0.5],
-            }
+            hyp_params = {'flip': 0.5,
+                          'crop': 0.5,
+                          'mean': [0.5, 0.5, 0.5],
+                          'std': [0.5, 0.5, 0.5]}
         self.input_size = input_size
         self.data_augment = data_augment
         self.hyp_params = hyp_params
@@ -346,16 +380,14 @@ class MNIST(_BaseDataset):
     def __init__(self,
                  data_root,
                  data_split,
-                 input_size=None,
+                 input_size,
                  data_augment=False,
                  hyp_params=None,
                  download=True):
-        if input_size is None:
-            input_size = 28
         super(MNIST, self).__init__(input_size=input_size,
                                     data_augment=data_augment,
                                     hyp_params=hyp_params)
-        assert data_split in ['train', 'test']
+        assert data_split in ['train', 'val', 'test']
         mean, std = (self.hyp_params['mean'][0],
                      self.hyp_params['std'][0])
         self.hyp_params['mean'] = mean
@@ -488,12 +520,10 @@ class SVHN(_BaseDataset):
     def __init__(self,
                  data_root,
                  data_split,
-                 input_size=None,
+                 input_size,
                  data_augment=False,
                  hyp_params=None,
                  download=True):
-        if input_size is None:
-            input_size = 32
         super(SVHN, self).__init__(input_size=input_size,
                                    data_augment=data_augment,
                                    hyp_params=hyp_params)
@@ -502,12 +532,12 @@ class SVHN(_BaseDataset):
             'train': ["http://ufldl.stanford.edu/housenumbers/train_32x32.mat",
                       "train_32x32.mat",
                       "e26dedcc434d2e4c54c9b2d4a06d8373"],
-            'val': ["http://ufldl.stanford.edu/housenumbers/extra_32x32.mat",
-                    "extra_32x32.mat",
-                    "a93ce644f1a588dc4d68dda5feec44a7"],
-            'test': ["http://ufldl.stanford.edu/housenumbers/test_32x32.mat",
-                     "test_32x32.mat",
-                     "eb5a983be6a315427106f1b164d9cef3"],
+            'val': ["http://ufldl.stanford.edu/housenumbers/test_32x32.mat",
+                    "test_32x32.mat",
+                    "eb5a983be6a315427106f1b164d9cef3"],
+            'test': ["http://ufldl.stanford.edu/housenumbers/extra_32x32.mat",
+                     "extra_32x32.mat",
+                     "a93ce644f1a588dc4d68dda5feec44a7"],
         }
         self.data_root = data_root
         self.data_split = data_split
@@ -569,16 +599,14 @@ class CIFAR10(_BaseDataset):
     def __init__(self,
                  data_root,
                  data_split,
-                 input_size=None,
+                 input_size,
                  data_augment=False,
                  hyp_params=None,
                  download=True):
-        if input_size is None:
-            input_size = 32
         super(CIFAR10, self).__init__(input_size=input_size,
                                       data_augment=data_augment,
                                       hyp_params=hyp_params)
-        assert data_split in ['train', 'test']
+        assert data_split in ['train', 'val', 'test']
         self.data_root = data_root
         self.data_split = data_split
         if download:
@@ -665,11 +693,9 @@ class ImageFolder(_BaseDataset):
     def __init__(self,
                  data_root,
                  data_split,
-                 input_size=None,
+                 input_size,
                  data_augment=False,
                  hyp_params=None):
-        if input_size is None:
-            input_size = 224
         super(ImageFolder, self).__init__(input_size=input_size,
                                           data_augment=data_augment,
                                           hyp_params=hyp_params)

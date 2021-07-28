@@ -1,11 +1,12 @@
 import argparse
 import sys
-sys.path.append('../')
 import os
 import torch
 import onnx
 from pathlib import Path
-from classification.tools import select_device, load_model
+
+sys.path.append('../')
+from classification.tools import select_device, load_model, check_input_size
 
 
 def export_models(model,
@@ -21,8 +22,8 @@ def export_models(model,
         print('Starting TorchScript export ...')
         torch.jit.trace(model, inputs).save(pts_file)
         print('TorchScript export saved to %s' % pts_file)
-    except Exception as e:
-        print('TorchScript export failure %s' % e)
+    except Exception as err:
+        print('TorchScript export failure %s' % err)
     try:
         print('Starting Onnx export ...')
         torch.onnx.export(model,
@@ -36,8 +37,8 @@ def export_models(model,
         onnx_model = onnx.load(onnx_file)
         onnx.checker.check_model(onnx_model)
         print('Onnx export saved to %s' % onnx_file)
-    except Exception as e:
-        print('Onnx export failure %s' % e)
+    except Exception as err:
+        print('Onnx export failure %s' % err)
 
 
 if __name__ == '__main__':
@@ -58,6 +59,7 @@ if __name__ == '__main__':
     print('Loading model from %s ...' % opt.weights)
     model = load_model(opt.weights, device)
     # Dummy random inputs
+    opt.input_size = check_input_size(opt.input_size)
     inputs = torch.randn((opt.batch_size,
                           3,
                           opt.input_size,
