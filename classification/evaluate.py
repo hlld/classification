@@ -2,7 +2,10 @@ import torch
 from tqdm import tqdm
 
 
-def evaluate(model, device, dataloader, criterion):
+def evaluate(model,
+             device,
+             dataloader,
+             criterion=None):
     half_precision = device.type != 'cpu'
     if half_precision:
         model.half()
@@ -12,14 +15,19 @@ def evaluate(model, device, dataloader, criterion):
     # Switch to evaluate mode
     model.eval()
     with torch.no_grad():
-        desc = ('%10s' * 3) % ('top1', 'top5', 'loss')
+        desc = ('%10s' * 3) % ('top1',
+                               'top5',
+                               'loss')
         for images, targets in tqdm(dataloader, desc=desc):
             images = images.to(device, non_blocking=True)
             if half_precision:
                 images = images.half()
             targets = targets.to(device)
             outputs = model(images)
-            loss = criterion(outputs, targets)
+            if criterion is not None:
+                loss = criterion(outputs, targets)
+            else:
+                loss = torch.zeros(1, device=device)
             if half_precision:
                 outputs = outputs.float()
                 loss = loss.float()

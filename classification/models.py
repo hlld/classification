@@ -78,7 +78,9 @@ class Model(object):
         if self.model_ema is None and local_rank in [-1, 0]:
             self.model_ema = ModelEMA(self.model)
 
-    def update_ema(self, state_dict=None, updates=0):
+    def update_ema(self,
+                   state_dict=None,
+                   updates=0):
         if self.model_ema is not None:
             if state_dict is None:
                 if self.model_ddp is not None:
@@ -147,7 +149,7 @@ class MLP(_BaseModel):
                  hidden_channels=2048,
                  dropout=0.5):
         super(MLP, self).__init__(in_channels)
-        self.pool = nn.Sequential()
+        self.pool = nn.Flatten(1, -1)
         logits = [nn.Linear(in_channels, hidden_channels),
                   nn.ReLU(inplace=True),
                   nn.Dropout(dropout, inplace=True),

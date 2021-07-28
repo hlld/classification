@@ -10,7 +10,7 @@ from pathlib import Path
 from copy import deepcopy
 from tqdm import tqdm
 from classification.models import Model
-from classification.losses import CrossEntropyLoss
+from classification.losses import Criterion
 from classification.datasets import DataLoader
 from classification.evaluate import evaluate
 from classification.tools import load_yaml, save_yaml, find_directory, \
@@ -189,7 +189,7 @@ def train_network(local_rank, opt):
     # Start training network
     num_batchs = len(trainloader)
     scaler = amp.GradScaler(enabled=True)
-    criterion = CrossEntropyLoss()
+    criterion = Criterion()
     if local_rank in [-1, 0]:
         print('Dataloader workers %g' % trainloader.num_workers)
         print('Input size %g, batch size %g' % (opt.input_size,
@@ -275,7 +275,7 @@ def train_network(local_rank, opt):
         if local_rank in [-1, 0]:
             results = (0, 0, 0)
             if epoch == opt.epochs - 1 or not opt.notest:
-                results = evaluate(model,
+                results = evaluate(model.model_ema,
                                    device,
                                    dataloader=testloader,
                                    criterion=criterion)
@@ -322,9 +322,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # Dataset options
     parser.add_argument('--data_root', type=str, default='../datasets',
-                        help='data root')
+                        help='dataset root')
     parser.add_argument('--data_type', type=str, default='cifar10',
-                        help='data type')
+                        help='dataset type')
     parser.add_argument('--input_size', type=int, default=-1,
                         help='input size')
     parser.add_argument('--in_channels', type=int, default=-1,
@@ -377,7 +377,7 @@ if __name__ == '__main__':
                         help='final learning rate')
     parser.add_argument('--momentum', type=float, default=0.9,
                         help='momentum')
-    parser.add_argument('--warmup_steps', type=int, default=2000,
+    parser.add_argument('--warmup_steps', type=int, default=1000,
                         help='warmup steps')
     parser.add_argument('--warmup_momentum', type=float, default=0.8,
                         help='warmup momentum')

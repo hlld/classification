@@ -95,7 +95,9 @@ def find_directory(root_path, base_name):
 
 class ModelEMA(object):
     # https://github.com/rwightman/pytorch-image-models
-    def __init__(self, model, decay=0.9999):
+    def __init__(self,
+                 model,
+                 decay=0.9999):
         self.model = deepcopy(model).eval()
         self.updates = 0
         # Decay exponential ramp (to help early epochs)
