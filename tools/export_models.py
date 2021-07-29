@@ -52,7 +52,7 @@ if __name__ == '__main__':
                         help='total batch size')
     parser.add_argument('--in_channels', type=int, default=3,
                         help='model input channels')
-    parser.add_argument('--input_size', type=int, default=224,
+    parser.add_argument('--input_size', type=int, default=32,
                         help='model input size')
     parser.add_argument('--save_path', type=str, default='../results',
                         help='path to outputs')

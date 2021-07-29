@@ -311,29 +311,28 @@ class _BaseDataset(torch.utils.data.Dataset):
             image = deepcopy(image)
         height, width = image.shape[:2]
         input_h, input_w = self.input_size
+        h_thresh, w_thresh = (round(1.25 * input_h),
+                              round(1.25 * input_w))
         padding = None
-        if height < round(1.25 * input_h):
-            padding_h = round(0.25 * input_h + (input_h - height))
-            padding = ((padding_h // 2, padding_h // 2 + padding_h % 2),
-                       (0, 0),
-                       (0, 0))
+        if height < h_thresh or width < w_thresh:
+            padding_h, padding_w = (0, 0), (0, 0)
+            if height < h_thresh:
+                padding_size = h_thresh - height
+                padding_h = (padding_size // 2,
+                             padding_size // 2 + padding_size % 2)
+            if width < w_thresh:
+                padding_size = w_thresh - width
+                padding_w = (padding_size // 2,
+                             padding_size // 2 + padding_size % 2)
+            padding = (padding_h, padding_w, (0, 0))
+        if padding is not None:
             image = np.pad(image,
                            padding,
                            mode='constant',
                            constant_values=0)
-        if width < round(1.25 * input_w):
-            padding_w = round(0.25 * input_w + (input_w - width))
-            padding = ((0, 0),
-                       (padding_w // 2, padding_w // 2 + padding_w % 2),
-                       (0, 0))
-            image = np.pad(image,
-                           padding,
-                           mode='constant',
-                           constant_values=0)
-        if padding is None:
-            top, left, h, w = self.random_size_rect(image)
-        else:
             top, left, h, w = self.fixed_size_rect(image)
+        else:
+            top, left, h, w = self.random_size_rect(image)
         return image[top:(top + h), left:(left + w), :]
 
     def normalize(self,

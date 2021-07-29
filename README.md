@@ -16,7 +16,9 @@ This repository contains the PyTorch implementation of basic classification mode
 
 | Dataset | Model | FLOPs(B) | Params(M) | Top1(%) | Top5(%) |
 | --- | --- | --- | --- | --- | --- |
-| - | - | - | - | - | - |
+| MNIST | MLP | 0.0033 | 1.6282 | 97.16 | 99.96 |
+| MNIST | Resnet20 | 0.0813 | 0.2694 | 99.21 | 100.00 |
+| --- | --- | --- | --- | --- | --- |
 
 ## Supported Datasets
 
@@ -36,18 +38,9 @@ This repository contains the PyTorch implementation of basic classification mode
 <details><summary> <b>Expand</b> </summary>
 
 - [x] MLP
-- [x] ResNet20
-- [x] ResNet32
-- [x] ResNet44
-- [x] ResNet56
-- [x] ResNet110
-- [x] VGG16
-- [x] VGG19
-- [x] ResNet18
-- [x] ResNet34
-- [x] ResNet50
-- [x] ResNet101
-- [x] ResNet152
+- [x] ResNet20, ResNet32, ResNet44, ResNet56, ResNet110
+- [x] VGG16, VGG19
+- [x] ResNet18, ResNet34, ResNet50, ResNet101, ResNet152
 
 </details>
 
@@ -63,17 +56,17 @@ pip install -r requirements.txt
 python train.py               \
     --data_type='mnist'       \
     --model_type='mlp'        \
-    --hidden_channels=4096    \
-    --dropout=0.5             \
-    --epochs=40               \
+    --hidden_channels=2048    \
+    --dropout=0               \
+    --epochs=30               \
     --batch_size=256
 ```
 
-### Training ResNet20 on CIFAR10 dataset
+### Training ResNet56 on CIFAR10 dataset
 ```
 python train.py               \
     --data_type='cifar10'     \
-    --model_type='resnet20'   \
+    --model_type='resnet56'   \
     --epochs=180              \
     --batch_size=128
 ```

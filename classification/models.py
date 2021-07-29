@@ -35,7 +35,7 @@ class Model(object):
         self.model_ema = None
 
     def __call__(self, x):
-        self._model(x)
+        return self._model(x)
 
     @property
     def _model(self):
@@ -159,7 +159,7 @@ class MLP(_BaseModel):
                  num_classes,
                  model_type='mlp',
                  hidden_channels=2048,
-                 dropout=0.5):
+                 dropout=0):
         super(MLP, self).__init__()
         self.pool = nn.Flatten(1, -1)
         # Dropout must operate with inplace disabled
@@ -180,7 +180,7 @@ class VGGNet(_BaseModel):
                  num_classes,
                  model_type='vgg16',
                  hidden_channels=2048,
-                 dropout=0.5):
+                 dropout=0):
         super(VGGNet, self).__init__()
         if model_type == 'vgg16':
             block_num = [2, 2, 3, 3, 3]

@@ -193,7 +193,8 @@ def train_network(local_rank, opt):
     num_batchs = len(trainloader)
     model.module.data_type = opt.data_type
     model.module.classes = trainloader.dataset.classes
-    scaler = amp.GradScaler(enabled=True)
+    use_cuda = device.type != 'cpu'
+    scaler = amp.GradScaler(enabled=use_cuda)
     criterion = Criterion()
     if local_rank in [-1, 0]:
         print('Dataloader workers %g' % trainloader.num_workers)
@@ -246,7 +247,7 @@ def train_network(local_rank, opt):
                             x_pos,
                             [opt.warmup_momentum, opt.momentum])
 
-            with amp.autocast(enabled=True):
+            with amp.autocast(enabled=use_cuda):
                 outputs = model(images)
                 loss = criterion(outputs, targets)
                 # DDP gradients averaged between devices
@@ -328,7 +329,7 @@ def train_network(local_rank, opt):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # Dataset options
-    parser.add_argument('--data_root', type=str, default='../datasets',
+    parser.add_argument('--data_root', type=str, default='./datasets',
                         help='dataset root')
     parser.add_argument('--data_type', type=str, default='cifar10',
                         help='dataset type')
@@ -353,7 +354,7 @@ if __name__ == '__main__':
                         help='model type')
     parser.add_argument('--hidden_channels', type=int, default=2048,
                         help='hidden channels of head')
-    parser.add_argument('--dropout', type=float, default=0.5,
+    parser.add_argument('--dropout', type=float, default=0,
                         help='dropout rate of hidden channels')
     parser.add_argument('--sync_bn', type=bool, default=False,
                         help='sync batchnorm')
@@ -364,7 +365,7 @@ if __name__ == '__main__':
                         help='weights path')
     parser.add_argument('--resume', type=bool, default=False,
                         help='resume training')
-    parser.add_argument('--epochs', type=int, default=200,
+    parser.add_argument('--epochs', type=int, default=180,
                         help='train epochs')
     parser.add_argument('--batch_size', type=int, default=128,
                         help='total batch size')

@@ -7,9 +7,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', type=str, default='',
                         help='weights path')
-    parser.add_argument('--data_root', type=str, default='../datasets',
+    parser.add_argument('--data_root', type=str, default='./datasets',
                         help='dataset root')
-    parser.add_argument('--data_type', type=str, default='mnist',
+    parser.add_argument('--data_type', type=str, default='cifar10',
                         help='dataset type')
     parser.add_argument('--data_split', type=str, default='test',
                         help='train, val or test')
@@ -23,7 +23,7 @@ if __name__ == '__main__':
                         help='image batch size')
     parser.add_argument('--device', type=int, default=0,
                         help='cuda device')
-    parser.add_argument('--workers', type=int, default=4,
+    parser.add_argument('--workers', type=int, default=8,
                         help='number of workers')
     opt = parser.parse_args()
 

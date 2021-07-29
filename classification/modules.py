@@ -134,14 +134,15 @@ class GlobalPool(nn.Module):
             raise ValueError('Unknown type %s' % pooling_type)
 
     def forward(self, x):
-        if len(x.shape) != 4 or (x.shape[2] == 1 and x.shape[3] == 1):
-            return x
+        assert len(x.shape) == 4
+        # Static kernel size to avoid onnx export error
+        kernel_h, kernel_w = int(x.shape[2]), int(x.shape[3])
         if self.use_max_pool:
             return F.max_pool2d(x,
-                                x.shape[2:4],
+                                kernel_size=(kernel_h, kernel_w),
                                 stride=1,
                                 padding=0)
         return F.avg_pool2d(x,
-                            x.shape[2:4],
+                            kernel_size=(kernel_h, kernel_w),
                             stride=1,
                             padding=0)
