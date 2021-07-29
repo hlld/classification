@@ -18,7 +18,6 @@ This repository contains the PyTorch implementation of basic classification mode
 | --- | --- | --- | --- | --- | --- |
 | MNIST | MLP | 0.0033 | 1.6282 | 97.16 | 99.96 |
 | MNIST | Resnet20 | 0.0813 | 0.2694 | 99.21 | 100.00 |
-| --- | --- | --- | --- | --- | --- |
 
 ## Supported Datasets
 
@@ -80,7 +79,7 @@ python train.py               \
     --epochs=90               \
     --batch_size=256
 ```
-- The ILSVRC2012 data set needs to be prepared before training. For details, see [examples/imagenet](https://github.com/pytorch/examples/tree/master/imagenet)
+- The ILSVRC2012 dataset needs to be prepared before training. For details, see [examples/imagenet](https://github.com/pytorch/examples/tree/master/imagenet)
 
 ### Fine-tuning ResNet50 on CUSTOM dataset
 ```
