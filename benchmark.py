@@ -55,8 +55,8 @@ if __name__ == '__main__':
         raise ValueError('Unknown type %s' % opt.data_type)
     hyp_params = {'mean': opt.image_mean,
                   'std': opt.image_std}
-    if model.model_type != 'mlp':
-        opt.input_size = check_input_size(opt.input_size)
+    opt.input_size = check_input_size(opt.input_size,
+                                      model.max_stride)
     dataloader = DataLoader(opt.data_root,
                             opt.data_type,
                             data_split=opt.data_split,

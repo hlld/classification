@@ -122,7 +122,7 @@ class _BaseDataset(torch.utils.data.Dataset):
         self.input_size = input_size
         self.data_augment = data_augment
         self.hyp_params = hyp_params
-        self.class_map = {}
+        self.classes = []
 
     @staticmethod
     def gen_bar_updater():
@@ -413,7 +413,7 @@ class MNIST(_BaseDataset):
             self.download()
         self.images, self.targets = torch.load(
             os.path.join(self.processed_path, data_file))
-        self.class_map = {k: k for k in range(10)}
+        self.classes = [str(k) for k in range(10)]
 
     def download(self):
         resources = [
@@ -568,7 +568,7 @@ class SVHN(_BaseDataset):
         # this makes it inconsistent with several loss functions
         # which expect the class labels to be in the range [0, C-1]
         np.place(self.targets, self.targets == 10, 0)
-        self.class_map = {k: k for k in range(10)}
+        self.classes = [str(k) for k in range(10)]
 
     def data_length(self):
         return len(self.images)
@@ -653,7 +653,6 @@ class CIFAR10(_BaseDataset):
         with open(file_path, 'rb') as infile:
             data = pickle.load(infile, encoding='latin1')
             self.classes = data[self.data_meta['key']]
-            self.class_map = {name: k for k, name in enumerate(self.classes)}
 
     def _check_integrity(self):
         for fentry in (self.train_list + self.test_list):

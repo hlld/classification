@@ -35,38 +35,35 @@ class Model(object):
         self.model_ema = None
 
     def __call__(self, x):
+        self._model(x)
+
+    @property
+    def _model(self):
         if self.model_ddp is not None:
-            return self.model_ddp(x)
-        return self.module(x)
+            return self.model_ddp
+        return self.module
+
+    @property
+    def _module(self):
+        if self.model_ddp is not None:
+            return self.model_ddp.module
+        return self.module
 
     def train(self, mode=True):
-        if self.model_ddp is not None:
-            self.model_ddp.train(mode)
-        else:
-            self.module.train(mode)
+        self._model.train(mode)
         return self
 
     def eval(self):
-        if self.model_ddp is not None:
-            self.model_ddp.eval()
-        else:
-            self.module.eval()
+        self._model.eval()
         return self
 
     def to(self, device):
-        if self.model_ddp is not None:
-            self.model_ddp.to(device)
-        else:
-            self.module.to(device)
+        self._model.to(device)
         return self
 
     def frozen_bn(self):
         # Frozen batchnorm layers before training
-        if self.model_ddp is not None:
-            module = self.model_ddp.module
-        else:
-            module = self.module
-        for m in module.modules():
+        for m in self._module.modules():
             if isinstance(m, nn.BatchNorm2d):
                 m.eval()
 
@@ -93,10 +90,7 @@ class Model(object):
                    updates=0):
         if self.model_ema is not None:
             if state_dict is None:
-                if self.model_ddp is not None:
-                    self.model_ema.update(self.model_ddp.module)
-                else:
-                    self.model_ema.update(self.module)
+                self.model_ema.update(self._module)
             else:
                 self.model_ema.module.load_state_dict(state_dict)
                 self.model_ema.updates = updates
@@ -130,11 +124,12 @@ class _BaseModel(nn.Module):
         self.pool = nn.Sequential(*[GlobalPool('avg'),
                                     nn.Flatten(1, -1)])
         self.logits = nn.Sequential()
+        self.max_stride = -1
         self.model_type = ''
         self.data_type = ''
         self.in_channels = -1
         self.num_classes = -1
-        self.class_map = {}
+        self.classes = []
 
     def forward(self, x):
         x = self.stem(x)
@@ -173,6 +168,7 @@ class MLP(_BaseModel):
                   nn.Dropout(dropout),
                   nn.Linear(hidden_channels, num_classes)]
         self.logits = nn.Sequential(*logits)
+        self.max_stride = 1
         self.in_channels = in_channels
         self.num_classes = num_classes
         self.model_type = model_type
@@ -211,6 +207,7 @@ class VGGNet(_BaseModel):
                   nn.Dropout(dropout),
                   nn.Linear(hidden_channels, num_classes)]
         self.logits = nn.Sequential(*logits)
+        self.max_stride = 16
         self.num_classes = num_classes
         self.model_type = model_type
         self._initialize_weights()
@@ -279,6 +276,7 @@ class ResNet(_BaseModel):
         self.in_channels = in_channels
         if model_type in ['resnet20', 'resnet32', 'resnet44',
                           'resnet56', 'resnet110']:
+            self.max_stride = 8
             down_sample = [False, True, True]
             shortcut_conv = False
             self.stem = Conv(in_channels,
@@ -288,6 +286,7 @@ class ResNet(_BaseModel):
                              activation='relu')
             in_channels = 16
         else:
+            self.max_stride = 32
             down_sample = [False, True, True, True]
             shortcut_conv = True
             self.stem = nn.Sequential(*[

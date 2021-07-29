@@ -86,8 +86,8 @@ def train_network(local_rank, opt):
                 len(model.module.state_dict()),
                 opt.weights))
     # Check input size before profile
-    if opt.model_type != 'mlp':
-        opt.input_size = check_input_size(opt.input_size)
+    opt.input_size = check_input_size(opt.input_size,
+                                      model.module.max_stride)
     if local_rank in [-1, 0]:
         model.profile(device, opt.input_size)
 
@@ -189,12 +189,10 @@ def train_network(local_rank, opt):
                                 shuffle=False,
                                 num_workers=opt.workers,
                                 local_rank=-1)
-    # Attach external attributions
-    model.module.data_type = opt.data_type
-    model.module.class_map = trainloader.dataset.class_map
-
     # Start training network
     num_batchs = len(trainloader)
+    model.module.data_type = opt.data_type
+    model.module.classes = trainloader.dataset.classes
     scaler = amp.GradScaler(enabled=True)
     criterion = Criterion()
     if local_rank in [-1, 0]:

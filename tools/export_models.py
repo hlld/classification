@@ -6,7 +6,8 @@ import onnx
 from pathlib import Path
 
 sys.path.append('../')
-from classification.tools import select_device, load_model, check_input_size
+from classification.tools import select_device, load_model, \
+    check_input_size
 
 
 def export_models(model,
@@ -49,6 +50,8 @@ if __name__ == '__main__':
                         help='cuda device')
     parser.add_argument('--batch_size', type=int, default=1,
                         help='total batch size')
+    parser.add_argument('--in_channels', type=int, default=3,
+                        help='model input channels')
     parser.add_argument('--input_size', type=int, default=224,
                         help='model input size')
     parser.add_argument('--save_path', type=str, default='../results',
@@ -59,16 +62,16 @@ if __name__ == '__main__':
     print('Loading model from %s ...' % opt.weights)
     model = load_model(opt.weights, device)
     # Dummy random inputs
-    if model.model_type != 'mlp':
-        opt.input_size = check_input_size(opt.input_size)
+    opt.input_size = check_input_size(opt.input_size,
+                                      model.max_stride)
     inputs = torch.randn((opt.batch_size,
-                          3,
+                          opt.in_channels,
                           opt.input_size,
                           opt.input_size), device=device)
-    pts_file = os.path.join(opt.save_path,
-                            Path(opt.weights).stem + '.pts')
-    onnx_file = pts_file.replace('.pts', '.onnx')
+    pt_script_file = os.path.join(opt.save_path,
+                                  Path(opt.weights).stem + '.pts')
+    onnx_file = pt_script_file.replace('.pts', '.onnx')
     export_models(model,
                   inputs,
-                  pts_file=pts_file,
+                  pts_file=pt_script_file,
                   onnx_file=onnx_file)
