@@ -285,7 +285,7 @@ def train_network(local_rank, opt):
             results = (0, 0, 0)
             if epoch == opt.epochs - 1 or not opt.notest:
                 if opt.model_ema:
-                    test_model = model.model_ema
+                    test_model = model.model_ema.module
                 else:
                     test_model = model.module
                 results = evaluate(test_model,

@@ -19,12 +19,12 @@ This repository contains the PyTorch implementation of basic classification mode
 | MNIST | MLP | 0.0033 | 1.6282 | 97.16 | 99.96 |
 | MNIST | ResNet20 | 0.0813 | 0.2694 | 99.21 | 100.00 |
 | SVHN | ResNet32 | - | - | - | - |
-| SVHN | VGG16 | - | - | - | - |
-| CIFAR10 | ResNet44 | - | - | - | - |
-| CIFAR10 | ResNet18 | - | - | - | - |
-| CIFAR100 | ResNet56 | - | - | - | - |
-| CIFAR100 | ResNet34 | - | - | - | - |
-| ILSVRC2012 | VGG19 | - | - | - | - |
+| SVHN | ResNet44 | - | - | - | - |
+| CIFAR10 | ResNet56 | - | - | - | - |
+| CIFAR10 | VGG16 | - | - | - | - |
+| CIFAR100 | ResNet110 | - | - | - | - |
+| CIFAR100 | VGG19 | - | - | - | - |
+| ILSVRC2012 | ResNet18 | - | - | - | - |
 | ILSVRC2012 | ResNet50 | - | - | - | - |
 
 ## Supported Datasets
