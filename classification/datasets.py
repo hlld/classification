@@ -358,6 +358,7 @@ class _BaseDataset(torch.utils.data.Dataset):
                   inplace=False):
         if not inplace:
             image = deepcopy(image)
+        image = image.astype(np.float32)
         mean = np.array(self.hyp_params['mean'], dtype=np.float32)
         std = np.array(self.hyp_params['std'], dtype=np.float32)
         if (std == 0).any():
@@ -370,7 +371,7 @@ class _BaseDataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         image = self.get_image(index)
         target = self.get_target(index)
-        image = image.astype(np.float32)
+        image = image.astype(np.uint8)
         if self.data_augment:
             if image.shape[2] == 3:
                 image = self.random_hsv(image)

@@ -403,7 +403,7 @@ if __name__ == '__main__':
                         help='DDP local port')
     parser.add_argument('--device', type=str, default='0',
                         help='cuda device')
-    parser.add_argument('--workers', type=int, default=8,
+    parser.add_argument('--workers', type=int, default=4,
                         help='dataloader workers')
     opt = parser.parse_args()
 
