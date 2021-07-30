@@ -78,13 +78,13 @@ def train_network(local_rank, opt):
         ckpt = torch.load(opt.weights, map_location=device)
         state_dict = ckpt['model'].float().state_dict()
         state_dict = select_intersect(state_dict,
-                                      model.module.state_dict(),
+                                      model.state_dict(),
                                       exclude=[])
-        model.module.load_state_dict(state_dict, strict=False)
+        model.load_state_dict(state_dict, strict=False)
         if local_rank in [-1, 0]:
             print('Transferred %g/%g items from %s' % (
                 len(state_dict),
-                len(model.module.state_dict()),
+                len(model.state_dict()),
                 opt.weights))
     # Check input size before profile
     opt.input_size = check_input_size(opt.input_size,
@@ -102,7 +102,7 @@ def train_network(local_rank, opt):
 
     # Optimizer parameter groups
     params_weight, params_bias, params_except = [], [], []
-    for module in model.module.modules():
+    for module in model.modules():
         if hasattr(module, 'weight'):
             if isinstance(module.weight, nn.Parameter):
                 if isinstance(module, nn.BatchNorm2d):
@@ -159,8 +159,9 @@ def train_network(local_rank, opt):
                 optimizer.load_state_dict(ckpt['optimizer'])
                 best_accuracy = ckpt['best_accuracy']
             if local_rank in [-1, 0] and ckpt.get('model_ema'):
-                model.update_ema(ckpt['model_ema'].float().state_dict(),
-                                 updates=ckpt['updates'])
+                if opt.model_ema:
+                    model.update_ema(ckpt['model_ema'].float().state_dict(),
+                                     updates=ckpt['updates'])
             start_epoch = ckpt['epoch'] + 1
             assert start_epoch > 0, 'Training is finished'
             scheduler.last_epoch = start_epoch - 1
@@ -263,7 +264,8 @@ def train_network(local_rank, opt):
                 # Clean accumulated gradients
                 optimizer.zero_grad()
                 # Update model exponential moving average
-                model.update_ema()
+                if opt.model_ema:
+                    model.update_ema()
 
             if local_rank in [-1, 0]:
                 mean_loss = (mean_loss * index + loss.item()) / (index + 1)
@@ -282,7 +284,11 @@ def train_network(local_rank, opt):
         if local_rank in [-1, 0]:
             results = (0, 0, 0)
             if epoch == opt.epochs - 1 or not opt.notest:
-                results = evaluate(model.model_ema.module,
+                if opt.model_ema:
+                    test_model = model.model_ema
+                else:
+                    test_model = model.module
+                results = evaluate(test_model,
                                    device,
                                    dataloader=testloader,
                                    criterion=criterion)
@@ -303,13 +309,16 @@ def train_network(local_rank, opt):
                 tb_writer.add_scalar(tag, val, epoch)
 
             # Save model to storage
-            half_model_ema = deepcopy(model.model_ema.module).half()
+            half_model_ema, ema_updates = None, None
+            if opt.model_ema:
+                half_model_ema = deepcopy(model.model_ema.module).half()
+                ema_updates = model.model_ema.updates
             half_model = deepcopy(model.module).half()
             saved_ckpt = {'epoch': epoch,
                           'best_accuracy': best_accuracy,
                           'model': half_model,
                           'model_ema': half_model_ema,
-                          'updates': model.model_ema.updates,
+                          'updates': ema_updates,
                           'optimizer': optimizer.state_dict()}
             last_ckpt_path = os.path.join(opt.save_path, 'last.pt')
             best_ckpt_path = os.path.join(opt.save_path, 'best.pt')

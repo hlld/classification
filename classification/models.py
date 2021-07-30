@@ -16,81 +16,98 @@ class Model(object):
                  **kwargs):
         super(Model, self).__init__()
         if model_type == 'mlp':
-            self.module = MLP(in_channels,
+            self._model = MLP(in_channels,
                               num_classes,
                               model_type,
                               **kwargs)
         elif 'vgg' in model_type:
-            self.module = VGGNet(in_channels,
+            self._model = VGGNet(in_channels,
                                  num_classes,
                                  model_type,
                                  **kwargs)
         elif 'resnet' in model_type:
-            self.module = ResNet(in_channels,
+            self._model = ResNet(in_channels,
                                  num_classes,
                                  model_type)
         else:
             raise ValueError('Unknown type %s' % model_type)
-        self.model_ddp = None
+        self._model_ddp = None
         self.model_ema = None
 
     def __call__(self, x):
-        return self._model(x)
+        return self.model(x)
 
     @property
-    def _model(self):
-        if self.model_ddp is not None:
-            return self.model_ddp
-        return self.module
+    def module(self):
+        if self._model_ddp is not None:
+            return self._model_ddp.module
+        return self._model
 
     @property
-    def _module(self):
-        if self.model_ddp is not None:
-            return self.model_ddp.module
-        return self.module
+    def model(self):
+        if self._model_ddp is not None:
+            return self._model_ddp
+        return self._model
 
     def train(self, mode=True):
-        self._model.train(mode)
+        self.model.train(mode)
         return self
 
     def eval(self):
-        self._model.eval()
+        self.model.eval()
         return self
 
     def to(self, device):
-        self._model.to(device)
+        self.model.to(device)
         return self
+
+    def state_dict(self):
+        return self.module.state_dict()
+
+    def load_state_dict(self,
+                        state_dict,
+                        strict=True):
+        self.module.load_state_dict(state_dict, strict=strict)
+
+    def parameters(self):
+        return self.module.parameters()
+
+    def named_parameters(self):
+        return self.module.named_parameters()
+
+    def modules(self):
+        return self.module.modules()
 
     def frozen_bn(self):
         # Frozen batchnorm layers before training
-        for m in self._module.modules():
+        for m in self.module.modules():
             if isinstance(m, nn.BatchNorm2d):
                 m.eval()
 
     def apply_sync_bn(self, local_rank):
         # Should call before apply_ddp()
         if local_rank != -1:
-            self.module = \
-                torch.nn.SyncBatchNorm.convert_sync_batchnorm(self.module)
+            self._model = \
+                torch.nn.SyncBatchNorm.convert_sync_batchnorm(self._model)
 
     def apply_ddp(self, local_rank):
-        if self.model_ddp is None and local_rank != -1:
-            self.model_ddp = torch.nn.parallel.DistributedDataParallel(
-                self.module,
+        if self._model_ddp is None and local_rank != -1:
+            self._model_ddp = torch.nn.parallel.DistributedDataParallel(
+                self._model,
                 device_ids=[local_rank],
                 output_device=local_rank,
                 find_unused_parameters=False)
 
     def apply_ema(self, local_rank):
         if self.model_ema is None and local_rank in [-1, 0]:
-            self.model_ema = ModelEMA(self.module)
+            self.model_ema = ModelEMA(self._model)
 
     def update_ema(self,
                    state_dict=None,
                    updates=0):
         if self.model_ema is not None:
             if state_dict is None:
-                self.model_ema.update(self._module)
+                self.model_ema.update(self.module)
             else:
                 self.model_ema.module.load_state_dict(state_dict)
                 self.model_ema.updates = updates
@@ -99,14 +116,14 @@ class Model(object):
                 device,
                 input_size=224,
                 verbose=False):
-        if self.module.model_type == 'mlp':
+        if self._model.model_type == 'mlp':
             input_size = 1
         inputs = torch.rand((1,
-                             self.module.in_channels,
+                             self._model.in_channels,
                              input_size,
                              input_size), device=device)
         # Backup model to avoid distributed training error
-        flops, params = profile(deepcopy(self.module),
+        flops, params = profile(deepcopy(self._model),
                                 inputs=(inputs,),
                                 verbose=verbose)
         # Flops in billion, params in million
@@ -354,5 +371,5 @@ if __name__ == "__main__":
                   model_type=opt.model_type)
     model = model.to(device).train()
     model.profile(device, input_size=224)
-    for name, val in model.module.named_parameters():
+    for name, val in model.named_parameters():
         print(name, val.shape)

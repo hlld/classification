@@ -17,7 +17,15 @@ This repository contains the PyTorch implementation of basic classification mode
 | Dataset | Model | FLOPs(B) | Params(M) | Top1(%) | Top5(%) |
 | --- | --- | --- | --- | --- | --- |
 | MNIST | MLP | 0.0033 | 1.6282 | 97.16 | 99.96 |
-| MNIST | Resnet20 | 0.0813 | 0.2694 | 99.21 | 100.00 |
+| MNIST | ResNet20 | 0.0813 | 0.2694 | 99.21 | 100.00 |
+| SVHN | ResNet32 | - | - | - | - |
+| SVHN | VGG16 | - | - | - | - |
+| CIFAR10 | ResNet44 | - | - | - | - |
+| CIFAR10 | ResNet18 | - | - | - | - |
+| CIFAR100 | ResNet56 | - | - | - | - |
+| CIFAR100 | ResNet34 | - | - | - | - |
+| ILSVRC2012 | VGG19 | - | - | - | - |
+| ILSVRC2012 | ResNet50 | - | - | - | - |
 
 ## Supported Datasets
 
