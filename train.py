@@ -417,7 +417,7 @@ if __name__ == '__main__':
     opt = parser.parse_args()
 
     if opt.data_type == 'ilsvrc2012':
-        if not opt.data_root or opt.data_root == '../datasets':
+        if not opt.data_root or opt.data_root == './datasets':
             opt.data_root = '/home/ubuntu/DataSets/ILSVRC2012'
     use_single_node_ddp, global_rank = False, -1
     if opt.local_rank == -1:

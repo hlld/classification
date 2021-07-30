@@ -1,7 +1,8 @@
 import argparse
 from classification.datasets import DataLoader
 from classification.evaluate import evaluate
-from classification.tools import select_device, load_model, check_input_size
+from classification.tools import select_device, load_model, \
+    check_input_size
 
 
 def evaluate_network(opt):
@@ -70,7 +71,7 @@ if __name__ == '__main__':
     opt = parser.parse_args()
 
     if opt.data_type == 'ilsvrc2012':
-        if not opt.data_root or opt.data_root == '../datasets':
+        if not opt.data_root or opt.data_root == './datasets':
             opt.data_root = '/home/ubuntu/DataSets/ILSVRC2012'
     if opt.data_split not in ['train', 'val', 'test']:
         raise ValueError('Unknown type %s' % opt.data_split)
