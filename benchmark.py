@@ -54,7 +54,7 @@ if __name__ == '__main__':
                         help='dataset root')
     parser.add_argument('--data_type', type=str, default='cifar10',
                         help='dataset type')
-    parser.add_argument('--data_split', type=str, default='test',
+    parser.add_argument('--data_split', type=str, default='val',
                         help='train, val or test')
     parser.add_argument('--image_mean', type=list, default=[],
                         help='image mean')

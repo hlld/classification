@@ -148,7 +148,7 @@ def train_network(local_rank, opt):
         if local_rank in [-1, 0]:
             print('Using exponential moving average')
     model.apply_ddp(local_rank)
-    if local_rank != -1:
+    if local_rank == 0:
         print('Using distributed data parallel')
 
     start_epoch, best_accuracy = 0, 0
