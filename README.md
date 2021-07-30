@@ -18,12 +18,12 @@ This repository contains the PyTorch implementation of basic classification mode
 | --- | --- | --- | --- | --- | --- |
 | MNIST | MLP | 0.0033 | 1.6282 | 97.16 | 99.96 |
 | MNIST | ResNet20 | 0.0813 | 0.2694 | 99.21 | 100.00 |
-| SVHN | ResNet32 | - | - | - | - |
-| SVHN | ResNet44 | - | - | - | - |
-| CIFAR10 | ResNet56 | - | - | - | - |
-| CIFAR10 | VGG16 | - | - | - | - |
-| CIFAR100 | ResNet110 | - | - | - | - |
-| CIFAR100 | VGG19 | - | - | - | - |
+| SVHN | ResNet32 | 0.1389 | 0.4642 | 96.16 | 99.61 |
+| SVHN | ResNet44 | 0.1960 | 0.6586 | 96.52 | 99.60 |
+| CIFAR10 | ResNet56 | 0.2531 | 0.8530 | 93.47 | 99.86 |
+| CIFAR10 | VGG16 | 0.6296 | 15.7900 | 93.85 | 99.84 |
+| CIFAR100 | ResNet110 | 0.5100 | 1.7338 | - | - |
+| CIFAR100 | VGG19 | 0.8000 | 21.2854 | 73.49 | 91.62 |
 | ILSVRC2012 | ResNet18 | - | - | - | - |
 | ILSVRC2012 | ResNet50 | - | - | - | - |
 
@@ -96,7 +96,7 @@ python train.py               \
     --data_type='custom'      \
     --model_type='resnet50'   \
     --weights='pre-trained'   \
-    --epochs=40               \
+    --epochs=30               \
     --batch_size=128
 ```
 - The custom dataset format should be consistent with ILSVRC2012. More specially, the reference format of a custom dataset is as follows:

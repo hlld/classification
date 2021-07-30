@@ -69,6 +69,17 @@ class DataLoader(torch.utils.data.DataLoader):
                                          num_workers=num_workers,
                                          pin_memory=True,
                                          sampler=sampler)
+        object.__setattr__(self,
+                           'batch_sampler',
+                           _BatchSampler(self.batch_sampler))
+        self.iterator = super(DataLoader, self).__iter__()
+
+    def __len__(self):
+        return len(self.batch_sampler.sampler)
+
+    def __iter__(self):
+        for _ in range(len(self)):
+            yield next(self.iterator)
 
     @staticmethod
     def default_params(data_type):
@@ -105,6 +116,15 @@ class DataLoader(torch.utils.data.DataLoader):
             image_mean = [0.485, 0.456, 0.406]
             image_std = [0.229, 0.224, 0.225]
         return input_size, in_channels, num_classes, image_mean, image_std
+
+
+class _BatchSampler(object):
+    def __init__(self, sampler):
+        self.sampler = sampler
+
+    def __iter__(self):
+        while self.sampler is not None:
+            yield from iter(self.sampler)
 
 
 class _BaseDataset(torch.utils.data.Dataset):
