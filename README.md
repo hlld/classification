@@ -22,7 +22,7 @@ This repository contains the PyTorch implementation of basic classification mode
 | SVHN | ResNet44 | 0.1960 | 0.6586 | 96.52 | 99.60 |
 | CIFAR10 | ResNet56 | 0.2531 | 0.8530 | 93.47 | 99.86 |
 | CIFAR10 | VGG16 | 0.6296 | 15.7900 | 93.85 | 99.84 |
-| CIFAR100 | ResNet110 | 0.5100 | 1.7338 | - | - |
+| CIFAR100 | ResNet110 | 0.5100 | 1.7338 | 73.62 | 92.73 |
 | CIFAR100 | VGG19 | 0.8000 | 21.2854 | 73.49 | 91.62 |
 | ILSVRC2012 | ResNet18 | - | - | - | - |
 | ILSVRC2012 | ResNet50 | - | - | - | - |

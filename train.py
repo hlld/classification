@@ -148,9 +148,8 @@ def train_network(local_rank, opt):
         if local_rank in [-1, 0]:
             print('Using exponential moving average')
     model.apply_ddp(local_rank)
-    if local_rank in [-1, 0]:
+    if local_rank != -1:
         print('Using distributed data parallel')
-        tb_writer = SummaryWriter(opt.save_path)
 
     start_epoch, best_accuracy = 0, 0
     if opt.weights:
@@ -199,6 +198,7 @@ def train_network(local_rank, opt):
     scaler = amp.GradScaler(enabled=use_cuda)
     criterion = Criterion()
     if local_rank in [-1, 0]:
+        tb_writer = SummaryWriter(opt.save_path)
         print('Dataloader workers %g' % trainloader.num_workers)
         print('Input size %g, batch size %g' % (opt.input_size,
                                                 opt.total_batch_size))
