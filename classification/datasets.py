@@ -138,8 +138,8 @@ class _BaseDataset(torch.utils.data.Dataset):
             hyp_params = {'hsv': [0.015, 0.7, 0.4],
                           'flip': 0.5,
                           'crop': 0.5,
-                          'mean': [0.5, 0.5, 0.5],
-                          'std': [0.5, 0.5, 0.5]}
+                          'mean': [0.485, 0.456, 0.406],
+                          'std': [0.229, 0.224, 0.225]}
         self.input_size = input_size
         self.data_augment = data_augment
         self.hyp_params = hyp_params
@@ -270,15 +270,6 @@ class _BaseDataset(torch.utils.data.Dataset):
                              extract_root,
                              remove_finished)
 
-    def data_length(self):
-        raise NotImplementedError
-
-    def get_image(self, index):
-        raise NotImplementedError
-
-    def get_target(self, index):
-        raise NotImplementedError
-
     @staticmethod
     def random_size_rect(image,
                          scale=(0.08, 1.0),
@@ -388,9 +379,9 @@ class _BaseDataset(torch.utils.data.Dataset):
         image /= std
         return image
 
-    def __getitem__(self, index):
-        image = self.get_image(index)
-        target = self.get_target(index)
+    def process(self,
+                image,
+                target):
         image = image.astype(np.uint8)
         if self.data_augment:
             if image.shape[2] == 3:
@@ -416,7 +407,10 @@ class _BaseDataset(torch.utils.data.Dataset):
         return image, target
 
     def __len__(self):
-        return self.data_length()
+        raise NotImplementedError
+
+    def __getitem__(self, index):
+        raise NotImplementedError
 
 
 class MNIST(_BaseDataset):
@@ -549,15 +543,14 @@ class MNIST(_BaseDataset):
             return lzma.open(path, 'rb')
         return open(path, 'rb')
 
-    def data_length(self):
+    def __len__(self):
         return len(self.images)
 
-    def get_image(self, index):
+    def __getitem__(self, index):
         # Convert to [H, W, C] format
-        return self.images[index].numpy()[:, :, None]
-
-    def get_target(self, index):
-        return int(self.targets[index])
+        image = self.images[index].numpy()[:, :, None]
+        target = int(self.targets[index])
+        return self.process(image, target)
 
 
 class SVHN(_BaseDataset):
@@ -610,14 +603,14 @@ class SVHN(_BaseDataset):
         np.place(self.targets, self.targets == 10, 0)
         self.classes = [str(k) for k in range(10)]
 
-    def data_length(self):
+    def __len__(self):
         return len(self.images)
 
-    def get_image(self, index):
-        return self.images[index]
-
-    def get_target(self, index):
-        return int(self.targets[index])
+    def __getitem__(self, index):
+        # [H, W, C] format
+        image = self.images[index]
+        target = int(self.targets[index])
+        return self.process(image, target)
 
 
 class CIFAR10(_BaseDataset):
@@ -704,14 +697,14 @@ class CIFAR10(_BaseDataset):
                 return False
         return True
 
-    def data_length(self):
+    def __len__(self):
         return len(self.images)
 
-    def get_image(self, index):
-        return self.images[index]
-
-    def get_target(self, index):
-        return int(self.targets[index])
+    def __getitem__(self, index):
+        # [H, W, C] format
+        image = self.images[index]
+        target = int(self.targets[index])
+        return self.process(image, target)
 
 
 class CIFAR100(CIFAR10):
@@ -786,20 +779,18 @@ class ImageFolder(_BaseDataset):
                         instances.append((path, class_index))
         return instances
 
-    def data_length(self):
+    def __len__(self):
         return len(self.samples)
 
-    def get_image(self, index):
+    def __getitem__(self, index):
         file_path = self.samples[index][0]
         image = cv2.imread(file_path)
         if image is None:
             raise ValueError('Missing image %s' % file_path)
         # Convert BGR to RGB format
         image = image[:, :, ::-1]
-        return image
-
-    def get_target(self, index):
-        return int(self.targets[index])
+        target = int(self.targets[index])
+        return self.process(image, target)
 
 
 if __name__ == "__main__":
