@@ -71,6 +71,7 @@ def train_network(local_rank, opt):
     model = Model(opt.in_channels,
                   num_classes=opt.num_classes,
                   model_type=opt.model_type,
+                  depth_multiplier=opt.depth_multiplier,
                   hidden_channels=opt.hidden_channels,
                   dropout=opt.dropout)
     model.to(device).train()
@@ -364,6 +365,8 @@ if __name__ == '__main__':
     # Model options
     parser.add_argument('--model_type', type=str, default='resnet20',
                         help='model type')
+    parser.add_argument('--depth_multiplier', type=float, default=1.0,
+                        help='channel multiplier')
     parser.add_argument('--hidden_channels', type=int, default=2048,
                         help='hidden channels of head')
     parser.add_argument('--dropout', type=float, default=0,

@@ -4,6 +4,7 @@ This repository contains the PyTorch implementation of basic classification mode
 
 ## Development History
 
+* `2021-07-31` - support mobilenet series
 * `2021-07-28` - support basic training pipeline
 * `2021-07-26` - support basic vision datasets
 * `2021-07-25` - support basic convolutional models
@@ -38,6 +39,7 @@ This repository contains the PyTorch implementation of basic classification mode
 - [x] ResNet20, ResNet32, ResNet44, ResNet56, ResNet110
 - [x] VGG16, VGG19
 - [x] ResNet18, ResNet34, ResNet50, ResNet101, ResNet152
+- [x] MobileNetV1, MobileNetV2, MobileNetV3-Small, MobileNetV3-Large
 
 ## Requirements
 ```
@@ -129,7 +131,7 @@ A boring master student from CQUPT. Email `hlldmail@qq.com`
 
 ## Acknowledgements
 
-* [https://github.com/pytorch/torchvision](https://github.com/pytorch/vision/tree/master/torchvision)
-* [pytorch/examples](https://github.com/pytorch/examples)
-* [akamaster/pytorch_resnet_cifar10](https://github.com/akamaster/pytorch_resnet_cifar10)
-* [ultralytics/yolov5](https://github.com/ultralytics/yolov5)
+* [https://github.com/pytorch/vision/torchvision](https://github.com/pytorch/vision/tree/master/torchvision)
+* [https://github.com/pytorch/examples](https://github.com/pytorch/examples)
+* [https://github.com/akamaster/pytorch_resnet_cifar10](https://github.com/akamaster/pytorch_resnet_cifar10)
+* [https://github.com/ultralytics/yolov5](https://github.com/ultralytics/yolov5)

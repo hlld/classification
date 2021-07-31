@@ -4,7 +4,8 @@ import torch
 import torch.nn as nn
 from thop import profile
 from copy import deepcopy
-from classification.modules import Conv, Bottleneck, GlobalPool
+from classification.modules import Conv, Bottleneck, GlobalPool, \
+    SeparableConv, InvertedResidual, Activation
 from classification.tools import select_device, ModelEMA
 
 
@@ -29,6 +30,11 @@ class Model(object):
             self._model = ResNet(in_channels,
                                  num_classes,
                                  model_type)
+        elif 'mobilenet' in model_type:
+            self._model = MobileNet(in_channels,
+                                    num_classes,
+                                    model_type,
+                                    **kwargs)
         else:
             raise ValueError('Unknown type %s' % model_type)
         self._model_ddp = None
@@ -175,9 +181,10 @@ class MLP(_BaseModel):
                  in_channels,
                  num_classes,
                  model_type='mlp',
-                 hidden_channels=2048,
-                 dropout=0):
+                 **kwargs):
         super(MLP, self).__init__()
+        hidden_channels = kwargs.get('hidden_channels', 2048)
+        dropout = kwargs.get('dropout', 0)
         self.pool = nn.Flatten(1, -1)
         # Dropout must operate with inplace disabled
         logits = [nn.Linear(in_channels, hidden_channels),
@@ -196,9 +203,10 @@ class VGGNet(_BaseModel):
                  in_channels,
                  num_classes,
                  model_type='vgg16',
-                 hidden_channels=2048,
-                 dropout=0):
+                 **kwargs):
         super(VGGNet, self).__init__()
+        hidden_channels = kwargs.get('hidden_channels', 2048)
+        dropout = kwargs.get('dropout', 0)
         if model_type == 'vgg16':
             block_num = [2, 2, 3, 3, 3]
         elif model_type == 'vgg19':
@@ -355,6 +363,151 @@ class ResNet(_BaseModel):
                                     shortcut_conv=True,
                                     activation='relu'))
         return nn.Sequential(*layer)
+
+
+class MobileNet(_BaseModel):
+    def __init__(self,
+                 in_channels,
+                 num_classes,
+                 model_type='mobilenetv1',
+                 **kwargs):
+        super(MobileNet, self).__init__()
+        depth_multiplier = kwargs.get('depth_multiplier', 1.0)
+        if model_type == 'mobilenetv1':
+            # [output, kernel size, stride,
+            #  activation, repeat]
+            layer_config = [[64, 3, 1, 'relu', 1],
+                            [128, 3, 2, 'relu', 1],
+                            [128, 3, 1, 'relu', 1],
+                            [256, 3, 2, 'relu', 1],
+                            [256, 3, 1, 'relu', 1],
+                            [512, 3, 2, 'relu', 1],
+                            [512, 3, 1, 'relu', 5],
+                            [1024, 3, 2, 'relu', 1],
+                            [1024, 3, 1, 'relu', 1]]
+        elif model_type == 'mobilenetv2':
+            # [output, expand, kernel, stride,
+            #  activation, squeeze excite, repeat]
+            layer_config = [[16, 1.0, 3, 1, 'relu6', False, 1],
+                            [24, 6.0, 3, 2, 'relu6', False, 2],
+                            [32, 6.0, 3, 2, 'relu6', False, 3],
+                            [64, 6.0, 3, 2, 'relu6', False, 4],
+                            [96, 6.0, 3, 1, 'relu6', False, 3],
+                            [160, 6.0, 3, 2, 'relu6', False, 3],
+                            [320, 6.0, 3, 1, 'relu6', False, 1]]
+        elif model_type == 'mobilenetv3-small':
+            # [output, expand, kernel, stride,
+            #  activation, squeeze excite, repeat]
+            layer_config = [[16, 1.0, 3, 2, 'relu', True, 1],
+                            [24, 3.0, 3, 2, 'relu', False, 1],
+                            [24, 88 / 24, 3, 1, 'relu', False, 1],
+                            [40, 2.4, 5, 2, 'hard-swish', True, 1],
+                            [40, 6.0, 5, 1, 'hard-swish', True, 1],
+                            [40, 6.0, 5, 1, 'hard-swish', True, 1],
+                            [48, 2.5, 5, 1, 'hard-swish', True, 1],
+                            [48, 3.0, 5, 1, 'hard-swish', True, 1],
+                            [96, 3.0, 5, 2, 'hard-swish', True, 1],
+                            [96, 6.0, 5, 1, 'hard-swish', True, 1],
+                            [96, 6.0, 5, 1, 'hard-swish', True, 1]]
+        elif model_type == 'mobilenetv3-large':
+            # [output, expand, kernel, stride,
+            #  activation, squeeze excite, repeat]
+            layer_config = [[16, 1.0, 3, 1, 'relu', False, 1],
+                            [24, 64 / 24, 3, 2, 'relu', False, 1],
+                            [24, 3.0, 3, 1, 'relu', False, 1],
+                            [40, 1.8, 5, 2, 'relu', True, 1],
+                            [40, 3.0, 5, 1, 'relu', True, 1],
+                            [40, 3.0, 5, 1, 'relu', True, 1],
+                            [80, 3.0, 3, 2, 'hard-swish', False, 1],
+                            [80, 2.5, 3, 1, 'hard-swish', False, 1],
+                            [80, 2.3, 3, 1, 'hard-swish', False, 1],
+                            [80, 2.3, 3, 1, 'hard-swish', False, 1],
+                            [112, 480 / 112, 3, 1, 'hard-swish', True, 1],
+                            [112, 6.0, 3, 1, 'hard-swish', True, 1],
+                            [160, 4.2, 5, 2, 'hard-swish', True, 1],
+                            [160, 6.0, 5, 1, 'hard-swish', True, 1],
+                            [160, 6.0, 5, 1, 'hard-swish', True, 1]]
+        else:
+            raise ValueError('Unknown type %s' % model_type)
+        self.in_channels = in_channels
+        in_channels = 16 if 'mobilenetv3' in model_type else 32
+        activation = 'relu6' if model_type == 'mobilenetv2' else 'relu'
+        in_channels = int(in_channels * depth_multiplier)
+        self.stem = Conv(self.in_channels,
+                         in_channels,
+                         kernel_size=3,
+                         stride=2,
+                         activation=activation)
+        layer_list = []
+        if model_type == 'mobilenetv1':
+            for out_channels, kernel, stride, activation, repeat in \
+                    layer_config:
+                out_channels = int(out_channels * depth_multiplier)
+                for _ in range(repeat):
+                    layer_list.append(SeparableConv(in_channels,
+                                                    out_channels,
+                                                    kernel_size=kernel,
+                                                    stride=stride,
+                                                    activation=activation))
+                    stride = 1
+                    in_channels = out_channels
+            self.layers = nn.Sequential(*layer_list)
+            self.logits = nn.Linear(in_channels, num_classes)
+        else:
+            for index, (out_channels, expand_ratio, kernel, stride,
+                        activation, use_se, repeat) in enumerate(layer_config):
+                out_channels = int(out_channels * depth_multiplier)
+                for _ in range(repeat):
+                    layer_list.append(InvertedResidual(
+                        in_channels,
+                        out_channels,
+                        expand_ratio=expand_ratio,
+                        kernel_size=kernel,
+                        stride=stride,
+                        activation=activation,
+                        use_squeeze_excite=use_se))
+                    stride = 1
+                    in_channels = out_channels
+            if model_type == 'mobilenetv3-small':
+                out_channels = 576
+            elif model_type == 'mobilenetv3-large':
+                out_channels = 960
+            else:
+                out_channels = 1280
+            out_channels = int(depth_multiplier * out_channels)
+            activation = 'relu6'
+            if 'mobilenetv3' in model_type:
+                activation = 'hard-swish'
+            layer_list.append(Conv(in_channels,
+                                   out_channels,
+                                   kernel_size=1,
+                                   stride=1,
+                                   activation=activation))
+            self.layers = nn.Sequential(*layer_list)
+            self.pool = GlobalPool('avg')
+            hidden_channels = int(depth_multiplier * 1280)
+            if 'mobilenetv3' in model_type:
+                hidden_module = nn.Sequential(*[
+                    nn.Conv2d(out_channels,
+                              hidden_channels,
+                              kernel_size=1,
+                              stride=1),
+                    Activation(activation)
+                ])
+            else:
+                hidden_module = nn.Identity()
+            self.logits = nn.Sequential(*[
+                hidden_module,
+                nn.Conv2d(hidden_channels,
+                          num_classes,
+                          kernel_size=1,
+                          stride=1),
+                nn.Flatten(1, -1)
+            ])
+        self.num_classes = num_classes
+        self.model_type = model_type
+        self.max_stride = 32
+        self._initialize_weights()
 
 
 if __name__ == "__main__":
