@@ -349,7 +349,7 @@ class _BaseDataset(torch.utils.data.Dataset):
 
     def random_hsv(self,
                    image,
-                   hsv_gain=(0.1, 0.9, 0.9)):
+                   hsv_gain=(0.015, 0.7, 0.4)):
         ratio = 1.0 + np.random.uniform(-1, 1, 3) * hsv_gain
         hue, sat, val = cv2.split(cv2.cvtColor(image,
                                                cv2.COLOR_BGR2HSV))
