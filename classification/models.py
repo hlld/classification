@@ -106,7 +106,7 @@ class Model(object):
 
     def apply_ema(self, local_rank):
         if self.model_ema is None and local_rank in [-1, 0]:
-            self.model_ema = ModelEMA(self._model)
+            self.model_ema = ModelEMA(self.module)
 
     def update_ema(self,
                    state_dict=None,
@@ -122,14 +122,14 @@ class Model(object):
                 device,
                 input_size=224,
                 verbose=False):
-        if self._model.model_type == 'mlp':
+        if self.module.model_type == 'mlp':
             input_size = 1
         inputs = torch.rand((1,
-                             self._model.in_channels,
+                             self.module.in_channels,
                              input_size,
                              input_size), device=device)
         # Backup model to avoid distributed training error
-        flops, params = profile(deepcopy(self._model),
+        flops, params = profile(deepcopy(self.module),
                                 inputs=(inputs,),
                                 verbose=verbose)
         # Flops in billion, params in million

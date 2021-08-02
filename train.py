@@ -59,9 +59,9 @@ def train_network(local_rank, opt):
             raise ValueError('Customized dataset with default arguments')
     else:
         raise ValueError('Unknown type %s' % opt.data_type)
-    hyp_params = {'hsv': opt.random_hsv,
-                  'flip': opt.random_flip,
+    hyp_params = {'flip': opt.random_flip,
                   'crop': opt.random_crop,
+                  'hsv': opt.random_hsv,
                   'mean': opt.image_mean,
                   'std': opt.image_std}
 
@@ -140,6 +140,35 @@ def train_network(local_rank, opt):
         scheduler = optim.lr_scheduler.MultiStepLR(optimizer,
                                                    milestones=opt.lr_steps,
                                                    gamma=0.1)
+
+    # Create dataset loader
+    trainloader = DataLoader(opt.data_root,
+                             opt.data_type,
+                             data_split='train',
+                             input_size=opt.input_size,
+                             batch_size=opt.batch_size,
+                             data_augment=opt.data_augment,
+                             hyp_params=hyp_params,
+                             download=True,
+                             shuffle=True,
+                             num_workers=opt.workers,
+                             local_rank=local_rank)
+    if local_rank in [-1, 0]:
+        testloader = DataLoader(opt.data_root,
+                                opt.data_type,
+                                data_split='val',
+                                input_size=opt.input_size,
+                                batch_size=opt.batch_size,
+                                data_augment=False,
+                                hyp_params=hyp_params,
+                                download=True,
+                                shuffle=False,
+                                num_workers=opt.workers,
+                                local_rank=-1)
+    model.module.data_type = opt.data_type
+    model.module.classes = trainloader.dataset.classes
+    num_batchs = len(trainloader)
+
     if opt.sync_bn:
         model.apply_sync_bn(local_rank)
         if local_rank in [-1, 0]:
@@ -167,34 +196,7 @@ def train_network(local_rank, opt):
             scheduler.last_epoch = start_epoch - 1
         del ckpt, state_dict
 
-    # Create dataset loader
-    trainloader = DataLoader(opt.data_root,
-                             opt.data_type,
-                             data_split='train',
-                             input_size=opt.input_size,
-                             batch_size=opt.batch_size,
-                             data_augment=opt.data_augment,
-                             hyp_params=hyp_params,
-                             download=True,
-                             shuffle=True,
-                             num_workers=opt.workers,
-                             local_rank=local_rank)
-    if local_rank in [-1, 0]:
-        testloader = DataLoader(opt.data_root,
-                                opt.data_type,
-                                data_split='val',
-                                input_size=opt.input_size,
-                                batch_size=opt.batch_size,
-                                data_augment=False,
-                                hyp_params=hyp_params,
-                                download=True,
-                                shuffle=False,
-                                num_workers=opt.workers,
-                                local_rank=-1)
     # Start training network
-    num_batchs = len(trainloader)
-    model.module.data_type = opt.data_type
-    model.module.classes = trainloader.dataset.classes
     use_cuda = device.type != 'cpu'
     scaler = amp.GradScaler(enabled=use_cuda)
     criterion = Criterion()
@@ -360,7 +362,7 @@ if __name__ == '__main__':
                         help='random flip')
     parser.add_argument('--random_crop', type=float, default=0.5,
                         help='random crop')
-    parser.add_argument('--random_hsv', type=list, default=[0.015, 0.7, 0.4],
+    parser.add_argument('--random_hsv', type=list, default=0.5,
                         help='random hsv')
     # Model options
     parser.add_argument('--model_type', type=str, default='resnet20',

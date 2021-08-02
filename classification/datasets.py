@@ -135,9 +135,9 @@ class _BaseDataset(torch.utils.data.Dataset):
         if isinstance(input_size, int):
             input_size = (input_size, input_size)
         if hyp_params is None:
-            hyp_params = {'hsv': [0.015, 0.7, 0.4],
-                          'flip': 0.5,
+            hyp_params = {'flip': 0.5,
                           'crop': 0.5,
+                          'hsv': 0.5,
                           'mean': [0.485, 0.456, 0.406],
                           'std': [0.229, 0.224, 0.225]}
         self.input_size = input_size
@@ -347,8 +347,10 @@ class _BaseDataset(torch.utils.data.Dataset):
             top, left, h, w = self.random_size_rect(image)
         return image[top:(top + h), left:(left + w), :]
 
-    def random_hsv(self, image):
-        ratio = 1.0 + np.random.uniform(-1, 1, 3) * self.hyp_params['hsv']
+    def random_hsv(self,
+                   image,
+                   hsv_gain=(0.1, 0.9, 0.9)):
+        ratio = 1.0 + np.random.uniform(-1, 1, 3) * hsv_gain
         hue, sat, val = cv2.split(cv2.cvtColor(image,
                                                cv2.COLOR_BGR2HSV))
         dtype = image.dtype
@@ -384,8 +386,9 @@ class _BaseDataset(torch.utils.data.Dataset):
                 target):
         image = image.astype(np.uint8)
         if self.data_augment:
-            if image.shape[2] == 3:
-                image = self.random_hsv(image)
+            if random.random() < self.hyp_params['hsv']:
+                if image.shape[2] == 3:
+                    image = self.random_hsv(image)
             if random.random() < self.hyp_params['flip']:
                 image = np.fliplr(image)
             if random.random() < self.hyp_params['crop']:
