@@ -362,7 +362,7 @@ if __name__ == '__main__':
                         help='random flip')
     parser.add_argument('--random_crop', type=float, default=0.5,
                         help='random crop')
-    parser.add_argument('--random_hsv', type=list, default=0.5,
+    parser.add_argument('--random_hsv', type=float, default=0.5,
                         help='random hsv')
     # Model options
     parser.add_argument('--model_type', type=str, default='resnet20',
