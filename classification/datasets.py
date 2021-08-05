@@ -351,7 +351,7 @@ class _BaseDataset(torch.utils.data.Dataset):
                     inplace=False):
         if not inplace:
             image = deepcopy(image)
-        width, height = image.size
+        height, width = image.shape[:2]
         h, w = self.input_size
         top = int(round((height - h) / 2.0))
         left = int(round((width - w) / 2.0))
