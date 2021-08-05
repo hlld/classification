@@ -61,7 +61,6 @@ def train_network(local_rank, opt):
         raise ValueError('Unknown type %s' % opt.data_type)
     hyp_params = {'flip': opt.random_flip,
                   'crop': opt.random_crop,
-                  'hsv': opt.random_hsv,
                   'mean': opt.image_mean,
                   'std': opt.image_std}
 
@@ -364,8 +363,6 @@ if __name__ == '__main__':
                         help='random flip')
     parser.add_argument('--random_crop', type=float, default=0.5,
                         help='random crop')
-    parser.add_argument('--random_hsv', type=float, default=0,
-                        help='random hsv')
     # Model options
     parser.add_argument('--model_type', type=str, default='resnet20',
                         help='model type')

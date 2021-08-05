@@ -137,7 +137,6 @@ class _BaseDataset(torch.utils.data.Dataset):
         if hyp_params is None:
             hyp_params = {'flip': 0.5,
                           'crop': 0.5,
-                          'hsv': 0.5,
                           'mean': [0.485, 0.456, 0.406],
                           'std': [0.229, 0.224, 0.225]}
         self.input_size = input_size
@@ -347,24 +346,16 @@ class _BaseDataset(torch.utils.data.Dataset):
             top, left, h, w = self.random_size_rect(image)
         return image[top:(top + h), left:(left + w), :]
 
-    def random_hsv(self,
-                   image,
-                   hsv_gain=(0.015, 0.7, 0.4)):
-        ratio = 1.0 + np.random.uniform(-1, 1, 3) * hsv_gain
-        hue, sat, val = cv2.split(cv2.cvtColor(image,
-                                               cv2.COLOR_BGR2HSV))
-        dtype = image.dtype
-        x = np.arange(0, 256, dtype=np.int16)
-        lut_hue, lut_sat, lut_val = \
-            (((x * ratio[0]) % 180).astype(dtype),
-             np.clip(x * ratio[1], 0, 255).astype(dtype),
-             np.clip(x * ratio[2], 0, 255).astype(dtype))
-
-        image_hsv = cv2.merge((cv2.LUT(hue, lut_hue),
-                               cv2.LUT(sat, lut_sat),
-                               cv2.LUT(val, lut_val)))
-        image_hsv = image_hsv.astype(dtype)
-        return cv2.cvtColor(image_hsv, cv2.COLOR_HSV2BGR)
+    def center_crop(self,
+                    image,
+                    inplace=False):
+        if not inplace:
+            image = deepcopy(image)
+        width, height = image.size
+        h, w = self.input_size
+        top = int(round((height - h) / 2.0))
+        left = int(round((width - w) / 2.0))
+        return image[top:(top + h), left:(left + w), :]
 
     def normalize(self,
                   image,
@@ -379,31 +370,37 @@ class _BaseDataset(torch.utils.data.Dataset):
         image /= 255.0
         image -= mean
         image /= std
+        image = np.ascontiguousarray(image)
         return image
 
     def process(self,
                 image,
-                target):
+                target,
+                one_crop=False):
         image = image.astype(np.uint8)
         if self.data_augment:
-            if random.random() < self.hyp_params['hsv']:
-                if image.shape[2] == 3:
-                    image = self.random_hsv(image)
             if random.random() < self.hyp_params['flip']:
                 image = np.fliplr(image)
             if random.random() < self.hyp_params['crop']:
                 image = self.random_crop(image)
-        if image.shape[:2] != self.input_size:
+        input_size = self.input_size
+        # One-crop testing strategy
+        if not self.data_augment and one_crop:
+            input_size = (round(1.143 * input_size[0]),
+                          round(1.143 * input_size[1]))
+        if image.shape[:2] != input_size:
             interpolation = cv2.INTER_LINEAR
-            if self.data_augment:
+            if image.shape[0] > input_size[0] and \
+                    image.shape[1] > input_size[1]:
                 interpolation = cv2.INTER_AREA
             image = cv2.resize(image,
-                               (self.input_size[1], self.input_size[0]),
+                               dsize=(input_size[1], input_size[0]),
                                interpolation=interpolation)
             if len(image.shape) == 2:
                 image = image[:, :, None]
+        if not self.data_augment and one_crop:
+            image = self.center_crop(image)
         image = self.normalize(image, inplace=True)
-        image = np.ascontiguousarray(image)
         image = torch.from_numpy(image)
         # Convert to [C, H, W] format
         image = image.permute((2, 0, 1))
@@ -793,7 +790,9 @@ class ImageFolder(_BaseDataset):
         # Convert BGR to RGB format
         image = image[:, :, ::-1]
         target = int(self.targets[index])
-        return self.process(image, target)
+        return self.process(image,
+                            target,
+                            one_crop=True)
 
 
 if __name__ == "__main__":
