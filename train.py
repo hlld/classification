@@ -250,9 +250,7 @@ def train_network(local_rank, opt):
                     else:
                         final_lr = opt.initial_lr
                     y_pos = [0, final_lr]
-                    # The bias group does not need warmup
-                    if param_index != 0:
-                        params['lr'] = np.interp(total_steps, x_pos, y_pos)
+                    params['lr'] = np.interp(total_steps, x_pos, y_pos)
                     if 'momentum' in params:
                         params['momentum'] = np.interp(
                             total_steps,
