@@ -93,6 +93,8 @@ def train_network(local_rank, opt):
         model.profile(device, opt.input_size)
 
     # Accumulate loss before optimizing
+    if opt.nominal_batch_size <= 0:
+        opt.nominal_batch_size = opt.total_batch_size
     accumulate = max(1, round(opt.nominal_batch_size / opt.total_batch_size))
     # Linear scale weight decay
     opt.weight_decay *= \
@@ -385,7 +387,7 @@ if __name__ == '__main__':
                         help='train epochs')
     parser.add_argument('--batch_size', type=int, default=128,
                         help='total batch size')
-    parser.add_argument('--nominal_batch_size', type=int, default=128,
+    parser.add_argument('--nominal_batch_size', type=int, default=-1,
                         help='nominal batch size')
     parser.add_argument('--save_path', type=str, default='./results',
                         help='save path')

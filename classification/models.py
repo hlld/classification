@@ -168,7 +168,7 @@ class _BaseModel(nn.Module):
                 m.weight.data.normal_(0, math.sqrt(2.0 / n))
                 if m.bias is not None:
                     m.bias.data.zero_()
-            elif isinstance(m, nn.BatchNorm2d):
+            elif isinstance(m, (nn.BatchNorm2d, nn.LayerNorm)):
                 m.weight.data.fill_(1.0)
                 m.bias.data.zero_()
             elif isinstance(m, nn.Linear):
@@ -504,6 +504,31 @@ class MobileNet(_BaseModel):
                           stride=1),
                 nn.Flatten(1, -1)
             ])
+        self.num_classes = num_classes
+        self.model_type = model_type
+        self.max_stride = 32
+        self._initialize_weights()
+
+
+class VisionTransformer(_BaseModel):
+    def __init__(self,
+                 in_channels,
+                 num_classes,
+                 model_type='vits',
+                 **kwargs):
+        super(VisionTransformer, self).__init__()
+        image_size = kwargs.get('image_size', 224)
+        patch_size = kwargs.get('patch_size', 16)
+        embed_dim = kwargs.get('embed_dim', 768)
+        depth = kwargs.get('depth', 12)
+        num_heads = kwargs.get('num_heads', 12)
+        mlp_ratio = kwargs.get('mlp_ratio', 4)
+        qkv_bias = kwargs.get('qkv_bias', True)
+        dropout = kwargs.get('dropout', 0)
+        attn_drop = kwargs.get('attn_drop', 0)
+        drop_path = kwargs.get('drop_path', 0)
+
+        self.in_channels = in_channels
         self.num_classes = num_classes
         self.model_type = model_type
         self.max_stride = 32

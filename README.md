@@ -21,8 +21,8 @@ This repository contains the PyTorch implementation of basic classification mode
 | CIFAR10 | VGG16 | 0.6296 | 15.7900 | 93.85 | 99.84 |
 | CIFAR100 | ResNet110 | 0.5100 | 1.7338 | 73.62 | 92.73 |
 | CIFAR100 | VGG19 | 0.8000 | 21.2854 | 73.49 | 91.62 |
-| ILSVRC2012 | ResNet18 | - | - | - | - |
 | ILSVRC2012 | ResNet50 | - | - | - | - |
+| ILSVRC2012 | MobileNetV2 | - | - | - | - |
 
 ## Supported Datasets
 
@@ -134,4 +134,5 @@ A boring master student from CQUPT. Email `hlldmail@qq.com`
 * [https://github.com/pytorch/vision/torchvision](https://github.com/pytorch/vision/tree/master/torchvision)
 * [https://github.com/pytorch/examples](https://github.com/pytorch/examples)
 * [https://github.com/akamaster/pytorch_resnet_cifar10](https://github.com/akamaster/pytorch_resnet_cifar10)
+* [https://github.com/rwightman/pytorch-image-models](https://github.com/rwightman/pytorch-image-models)
 * [https://github.com/ultralytics/yolov5](https://github.com/ultralytics/yolov5)
