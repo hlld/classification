@@ -4,6 +4,7 @@ This repository contains the PyTorch implementation of basic classification mode
 
 ## Development History
 
+* `2021-08-06` - support vision transformer series
 * `2021-07-31` - support mobilenet series
 * `2021-07-28` - support basic training pipeline
 * `2021-07-26` - support basic vision datasets
@@ -23,6 +24,7 @@ This repository contains the PyTorch implementation of basic classification mode
 | CIFAR100 | VGG19 | 0.8000 | 21.2854 | 73.49 | 91.62 |
 | ILSVRC2012 | ResNet50 | - | - | - | - |
 | ILSVRC2012 | MobileNetV2 | - | - | - | - |
+| ILSVRC2012 | ViT-Small | - | - | - | - |
 
 ## Supported Datasets
 
@@ -40,6 +42,7 @@ This repository contains the PyTorch implementation of basic classification mode
 - [x] VGG16, VGG19
 - [x] ResNet18, ResNet34, ResNet50, ResNet101, ResNet152
 - [x] MobileNetV1, MobileNetV2, MobileNetV3-Small, MobileNetV3-Large
+- [x] ViT-Tiny, ViT-Small, ViT-Base, ViT-Large
 
 ## Requirements
 ```

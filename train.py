@@ -72,7 +72,10 @@ def train_network(local_rank, opt):
                   model_type=opt.model_type,
                   depth_multiplier=opt.depth_multiplier,
                   hidden_channels=opt.hidden_channels,
-                  dropout=opt.dropout)
+                  dropout=opt.dropout,
+                  attn_drop=opt.attn_drop,
+                  drop_path=opt.drop_path,
+                  image_size=opt.input_size)
     model.to(device).train()
     if opt.weights:
         ckpt = torch.load(opt.weights, map_location=device)
@@ -107,7 +110,7 @@ def train_network(local_rank, opt):
     for module in model.modules():
         if hasattr(module, 'weight'):
             if isinstance(module.weight, nn.Parameter):
-                if isinstance(module, nn.BatchNorm2d):
+                if isinstance(module, (nn.BatchNorm2d, nn.LayerNorm)):
                     params_except.append(module.weight)
                 else:
                     params_weight.append(module.weight)
@@ -120,6 +123,7 @@ def train_network(local_rank, opt):
                           nesterov=True)
     optimizer.add_param_group({'params': params_weight,
                                'weight_decay': opt.weight_decay})
+    params_except += model.module.extra_params()
     if len(params_except) > 0:
         optimizer.add_param_group({'params': params_except})
     del params_weight, params_bias, params_except
@@ -374,10 +378,10 @@ if __name__ == '__main__':
                         help='hidden channels of head')
     parser.add_argument('--dropout', type=float, default=0,
                         help='dropout rate of hidden channels')
-    parser.add_argument('--sync_bn', type=bool, default=False,
-                        help='sync batchnorm')
-    parser.add_argument('--model_ema', type=bool, default=True,
-                        help='model ema')
+    parser.add_argument('--attn_drop', type=float, default=0,
+                        help='attention dropout rate')
+    parser.add_argument('--drop_path', type=float, default=0,
+                        help='stochastic depth drop rate')
     # Training options
     parser.add_argument('--weights', type=str, default='',
                         help='weights path')
@@ -409,6 +413,10 @@ if __name__ == '__main__':
                         help='warmup momentum')
     parser.add_argument('--weight_decay', type=float, default=0.0001,
                         help='weight decay')
+    parser.add_argument('--model_ema', type=bool, default=True,
+                        help='model ema')
+    parser.add_argument('--sync_bn', type=bool, default=False,
+                        help='sync batchnorm')
     # Platform options
     parser.add_argument('--benchmark', type=bool, default=False,
                         help='benchmark mode')

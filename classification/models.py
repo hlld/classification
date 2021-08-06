@@ -5,7 +5,7 @@ import torch.nn as nn
 from thop import profile
 from copy import deepcopy
 from classification.modules import Conv, Bottleneck, GlobalPool, \
-    SeparableConv, InvertedResidual, Activation
+    SeparableConv, InvertedResidual, Activation, PatchEmbed, ViTBlock
 from classification.tools import select_device, ModelEMA
 
 
@@ -35,6 +35,11 @@ class Model(object):
                                     num_classes,
                                     model_type,
                                     **kwargs)
+        elif 'vit' in model_type:
+            self._model = VisionTransformer(in_channels,
+                                            num_classes,
+                                            model_type,
+                                            **kwargs)
         else:
             raise ValueError('Unknown type %s' % model_type)
         self._model_ddp = None
@@ -140,12 +145,20 @@ class Model(object):
 
 
 class _BaseModel(nn.Module):
-    def __init__(self):
+    def __init__(self,
+                 pooling=True,
+                 flatten=True):
         super(_BaseModel, self).__init__()
         self.stem = nn.Sequential()
         self.layers = nn.Sequential()
-        self.pool = nn.Sequential(*[GlobalPool('avg'),
-                                    nn.Flatten(1, -1)])
+        if pooling:
+            self.pool = GlobalPool('avg')
+        else:
+            self.pool = nn.Identity()
+        if flatten:
+            self.flat = nn.Flatten(1, -1)
+        else:
+            self.flat = nn.Identity()
         self.logits = nn.Sequential()
         self.max_stride = -1
         self.model_type = ''
@@ -158,10 +171,11 @@ class _BaseModel(nn.Module):
         x = self.stem(x)
         x = self.layers(x)
         x = self.pool(x)
+        x = self.flat(x)
         x = self.logits(x)
         return x
 
-    def _initialize_weights(self):
+    def _initialize_weights(self, head):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
@@ -174,6 +188,12 @@ class _BaseModel(nn.Module):
             elif isinstance(m, nn.Linear):
                 m.weight.data.normal_(0, 0.01)
                 m.bias.data.zero_()
+        head_bias = -math.log(self.num_classes)
+        if isinstance(head, (nn.Conv2d, nn.Linear)):
+            head.bias.data.fill_(head_bias)
+
+    def extra_params(self):
+        return []
 
 
 class MLP(_BaseModel):
@@ -182,10 +202,9 @@ class MLP(_BaseModel):
                  num_classes,
                  model_type='mlp',
                  **kwargs):
-        super(MLP, self).__init__()
+        super(MLP, self).__init__(pooling=False)
         hidden_channels = kwargs.get('hidden_channels', 2048)
         dropout = kwargs.get('dropout', 0)
-        self.pool = nn.Flatten(1, -1)
         # Dropout must operate with inplace disabled
         logits = [nn.Linear(in_channels, hidden_channels),
                   nn.ReLU(inplace=True),
@@ -196,6 +215,7 @@ class MLP(_BaseModel):
         self.in_channels = in_channels
         self.num_classes = num_classes
         self.model_type = model_type
+        self._initialize_weights(self.logits[-1])
 
 
 class VGGNet(_BaseModel):
@@ -235,7 +255,7 @@ class VGGNet(_BaseModel):
         self.max_stride = 16
         self.num_classes = num_classes
         self.model_type = model_type
-        self._initialize_weights()
+        self._initialize_weights(self.logits[-1])
 
     @staticmethod
     def _make_layer(in_channels,
@@ -340,7 +360,7 @@ class ResNet(_BaseModel):
         self.logits = nn.Linear(in_channels, num_classes)
         self.num_classes = num_classes
         self.model_type = model_type
-        self._initialize_weights()
+        self._initialize_weights(self.logits)
 
     @staticmethod
     def _make_layer(in_channels,
@@ -371,7 +391,8 @@ class MobileNet(_BaseModel):
                  num_classes,
                  model_type='mobilenetv1',
                  **kwargs):
-        super(MobileNet, self).__init__()
+        flatten = model_type == 'mobilenetv1'
+        super(MobileNet, self).__init__(flatten=flatten)
         depth_multiplier = kwargs.get('depth_multiplier', 1.0)
         if model_type == 'mobilenetv1':
             # [output, kernel size, stride,
@@ -438,27 +459,27 @@ class MobileNet(_BaseModel):
                          kernel_size=3,
                          stride=2,
                          activation=activation)
-        layer_list = []
+        layers = []
         if model_type == 'mobilenetv1':
             for out_channels, kernel, stride, activation, repeat in \
                     layer_config:
                 out_channels = int(out_channels * depth_multiplier)
                 for _ in range(repeat):
-                    layer_list.append(SeparableConv(in_channels,
-                                                    out_channels,
-                                                    kernel_size=kernel,
-                                                    stride=stride,
-                                                    activation=activation))
+                    layers.append(SeparableConv(in_channels,
+                                                out_channels,
+                                                kernel_size=kernel,
+                                                stride=stride,
+                                                activation=activation))
                     stride = 1
                     in_channels = out_channels
-            self.layers = nn.Sequential(*layer_list)
+            self.layers = nn.Sequential(*layers)
             self.logits = nn.Linear(in_channels, num_classes)
         else:
             for index, (out_channels, expand_ratio, kernel, stride,
                         activation, use_se, repeat) in enumerate(layer_config):
                 out_channels = int(out_channels * depth_multiplier)
                 for _ in range(repeat):
-                    layer_list.append(InvertedResidual(
+                    layers.append(InvertedResidual(
                         in_channels,
                         out_channels,
                         expand_ratio=expand_ratio,
@@ -478,13 +499,12 @@ class MobileNet(_BaseModel):
             activation = 'relu6'
             if 'mobilenetv3' in model_type:
                 activation = 'hard-swish'
-            layer_list.append(Conv(in_channels,
-                                   out_channels,
-                                   kernel_size=1,
-                                   stride=1,
-                                   activation=activation))
-            self.layers = nn.Sequential(*layer_list)
-            self.pool = GlobalPool('avg')
+            layers.append(Conv(in_channels,
+                               out_channels,
+                               kernel_size=1,
+                               stride=1,
+                               activation=activation))
+            self.layers = nn.Sequential(*layers)
             hidden_channels = int(depth_multiplier * 1280)
             if 'mobilenetv3' in model_type:
                 hidden_module = nn.Sequential(*[
@@ -507,32 +527,94 @@ class MobileNet(_BaseModel):
         self.num_classes = num_classes
         self.model_type = model_type
         self.max_stride = 32
-        self._initialize_weights()
+        if model_type == 'mobilenetv1':
+            head = self.logits
+        else:
+            head = self.logits[-2]
+        self._initialize_weights(head)
 
 
 class VisionTransformer(_BaseModel):
     def __init__(self,
                  in_channels,
                  num_classes,
-                 model_type='vits',
+                 model_type='vit-tiny',
                  **kwargs):
-        super(VisionTransformer, self).__init__()
-        image_size = kwargs.get('image_size', 224)
-        patch_size = kwargs.get('patch_size', 16)
-        embed_dim = kwargs.get('embed_dim', 768)
-        depth = kwargs.get('depth', 12)
-        num_heads = kwargs.get('num_heads', 12)
-        mlp_ratio = kwargs.get('mlp_ratio', 4)
-        qkv_bias = kwargs.get('qkv_bias', True)
+        super(VisionTransformer, self).__init__(pooling=False,
+                                                flatten=False)
         dropout = kwargs.get('dropout', 0)
         attn_drop = kwargs.get('attn_drop', 0)
         drop_path = kwargs.get('drop_path', 0)
-
+        image_size = kwargs.get('image_size', 224)
+        if model_type == 'vit-tiny':
+            patch_size = 16
+            embed_dim = 192
+            depth = 12
+            num_heads = 3
+        elif model_type == 'vit-small':
+            patch_size = 16
+            embed_dim = 384
+            depth = 12
+            num_heads = 6
+        elif model_type == 'vit-base':
+            patch_size = 16
+            embed_dim = 768
+            depth = 12
+            num_heads = 12
+        elif model_type == 'vit-large':
+            patch_size = 16
+            embed_dim = 1024
+            depth = 24
+            num_heads = 16
+        else:
+            raise ValueError('Unknown type %s' % model_type)
+        self.stem = PatchEmbed(in_channels=in_channels,
+                               image_size=image_size,
+                               patch_size=patch_size,
+                               embed_dim=embed_dim,
+                               flatten=True,
+                               layer_norm=False)
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
+        self.pos_embed = nn.Parameter(
+            torch.zeros(1, self.stem.num_patches + 1, embed_dim))
+        self.pos_drop = nn.Dropout(dropout)
+        # Stochastic depth decay rule
+        depth_decay = [x.item() for x in torch.linspace(start=0,
+                                                        end=drop_path,
+                                                        steps=depth)]
+        layers = []
+        for k in range(depth):
+            layers.append(ViTBlock(in_channels=embed_dim,
+                                   num_heads=num_heads,
+                                   mlp_ratio=4,
+                                   qkv_bias=True,
+                                   dropout=dropout,
+                                   attn_drop=attn_drop,
+                                   drop_path=depth_decay[k],
+                                   activation='gelu'))
+        self.layers = nn.Sequential(*layers)
+        self.norm = nn.LayerNorm(embed_dim)
+        self.logits = nn.Linear(embed_dim, num_classes)
         self.in_channels = in_channels
         self.num_classes = num_classes
         self.model_type = model_type
-        self.max_stride = 32
-        self._initialize_weights()
+        self.max_stride = patch_size
+        nn.init.trunc_normal_(self.pos_embed, std=0.02)
+        nn.init.trunc_normal_(self.cls_token, std=0.02)
+        self._initialize_weights(self.logits)
+
+    def forward(self, x):
+        x = self.stem(x)
+        cls_token = self.cls_token.expand((x.shape[0], -1, -1))
+        x = torch.cat((cls_token, x), dim=1)
+        x = self.pos_drop(x + self.pos_embed)
+        x = self.layers(x)
+        x = self.norm(x)
+        x = self.logits(x[:, 0])
+        return x
+
+    def extra_params(self):
+        return [self.pos_embed, self.cls_token]
 
 
 if __name__ == "__main__":

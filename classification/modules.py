@@ -256,7 +256,7 @@ class Bottleneck(nn.Module):
         return self.act(x)
 
 
-class MSA(nn.Module):
+class Msa(nn.Module):
     # https://github.com/rwightman/pytorch-image-models
     def __init__(self,
                  in_channels,
@@ -264,7 +264,7 @@ class MSA(nn.Module):
                  qkv_bias=True,
                  attn_drop=0,
                  proj_drop=0):
-        super(MSA, self).__init__()
+        super(Msa, self).__init__()
         head_dim = in_channels // num_heads
         self.num_heads = num_heads
         self.scale = head_dim ** -0.5
@@ -294,14 +294,14 @@ class MSA(nn.Module):
         return x
 
 
-class MLP(nn.Module):
+class Mlp(nn.Module):
     def __init__(self,
                  in_channels,
                  hidden_channels=None,
                  out_channels=None,
                  activation='gelu',
                  dropout=0):
-        super(MLP, self).__init__()
+        super(Mlp, self).__init__()
         hidden_channels = hidden_channels or in_channels
         out_channels = out_channels or in_channels
         self.fc1 = nn.Linear(in_channels, hidden_channels)
@@ -349,7 +349,7 @@ class ViTBlock(nn.Module):
                  activation='gelu'):
         super(ViTBlock, self).__init__()
         self.norm1 = nn.LayerNorm(in_channels)
-        self.msa = MSA(in_channels,
+        self.msa = Msa(in_channels,
                        num_heads=num_heads,
                        qkv_bias=qkv_bias,
                        attn_drop=attn_drop,
@@ -357,7 +357,7 @@ class ViTBlock(nn.Module):
         self.drop_path = DropPath(drop_path)
         self.norm2 = nn.LayerNorm(in_channels)
         hidden_channels = int(in_channels * mlp_ratio)
-        self.mlp = MLP(in_channels=in_channels,
+        self.mlp = Mlp(in_channels=in_channels,
                        hidden_channels=hidden_channels,
                        activation=activation,
                        dropout=dropout)
@@ -387,17 +387,17 @@ class PatchEmbed(nn.Module):
                               kernel_size=patch_size,
                               stride=patch_size,
                               bias=True)
-        self.norm = None
         if layer_norm:
             self.norm = nn.LayerNorm(embed_dim)
+        else:
+            self.norm = nn.Identity()
 
     def forward(self, x):
         x = self.conv(x)
         if self.flatten:
             # [n, c, h, w] to [b, n, c] format
             x = x.flatten(2, -1).transpose(1, 2)
-        if self.norm is not None:
-            x = self.norm(x)
+        x = self.norm(x)
         return x
 
 
