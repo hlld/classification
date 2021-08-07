@@ -175,7 +175,7 @@ class _BaseModel(nn.Module):
         x = self.logits(x)
         return x
 
-    def _initialize_weights(self, head):
+    def _initialize_weights(self):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
@@ -188,9 +188,6 @@ class _BaseModel(nn.Module):
             elif isinstance(m, nn.Linear):
                 m.weight.data.normal_(0, 0.01)
                 m.bias.data.zero_()
-        head_bias = -math.log(self.num_classes)
-        if isinstance(head, (nn.Conv2d, nn.Linear)):
-            head.bias.data.fill_(head_bias)
 
     def extra_params(self):
         return []
@@ -215,7 +212,7 @@ class MLP(_BaseModel):
         self.in_channels = in_channels
         self.num_classes = num_classes
         self.model_type = model_type
-        self._initialize_weights(self.logits[-1])
+        self._initialize_weights()
 
 
 class VGGNet(_BaseModel):
@@ -255,7 +252,7 @@ class VGGNet(_BaseModel):
         self.max_stride = 16
         self.num_classes = num_classes
         self.model_type = model_type
-        self._initialize_weights(self.logits[-1])
+        self._initialize_weights()
 
     @staticmethod
     def _make_layer(in_channels,
@@ -360,7 +357,7 @@ class ResNet(_BaseModel):
         self.logits = nn.Linear(in_channels, num_classes)
         self.num_classes = num_classes
         self.model_type = model_type
-        self._initialize_weights(self.logits)
+        self._initialize_weights()
 
     @staticmethod
     def _make_layer(in_channels,
@@ -527,11 +524,7 @@ class MobileNet(_BaseModel):
         self.num_classes = num_classes
         self.model_type = model_type
         self.max_stride = 32
-        if model_type == 'mobilenetv1':
-            head = self.logits
-        else:
-            head = self.logits[-2]
-        self._initialize_weights(head)
+        self._initialize_weights()
 
 
 class VisionTransformer(_BaseModel):
@@ -601,7 +594,7 @@ class VisionTransformer(_BaseModel):
         self.max_stride = patch_size
         nn.init.trunc_normal_(self.pos_embed, std=0.02)
         nn.init.trunc_normal_(self.cls_token, std=0.02)
-        self._initialize_weights(self.logits)
+        self._initialize_weights()
 
     def forward(self, x):
         x = self.stem(x)

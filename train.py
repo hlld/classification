@@ -240,17 +240,18 @@ def train_network(local_rank, opt):
             if total_steps <= opt.warmup_steps:
                 x_pos = [0, opt.warmup_steps]
                 y_pos = [1.0, opt.nominal_batch_size / opt.total_batch_size]
-                accumulate = max(1, np.interp(total_steps,
-                                              x_pos,
-                                              y_pos).round())
+                accumulate = max(1, round(np.interp(total_steps,
+                                                    x_pos,
+                                                    y_pos)))
                 for param_index, params in enumerate(optimizer.param_groups):
                     # Learning rate rise from 0 to final_lr
                     if opt.cosine_lr:
                         final_lr = opt.initial_lr * lr_lambda(epoch)
                     else:
                         final_lr = opt.initial_lr
-                    y_pos = [0, final_lr]
-                    params['lr'] = np.interp(total_steps, x_pos, y_pos)
+                    params['lr'] = np.interp(total_steps,
+                                             x_pos,
+                                             [0, final_lr])
                     if 'momentum' in params:
                         params['momentum'] = np.interp(
                             total_steps,
@@ -424,7 +425,7 @@ if __name__ == '__main__':
                         help='DDP local port')
     parser.add_argument('--device', type=str, default='0',
                         help='cuda device')
-    parser.add_argument('--workers', type=int, default=4,
+    parser.add_argument('--workers', type=int, default=8,
                         help='dataloader workers')
     opt = parser.parse_args()
 

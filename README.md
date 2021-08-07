@@ -14,17 +14,17 @@ This repository contains the PyTorch implementation of basic classification mode
 
 | Dataset | Model | FLOPs(B) | Params(M) | Top1(%) | Top5(%) |
 | --- | --- | --- | --- | --- | --- |
-| MNIST | MLP | 0.0033 | 1.6282 | 97.16 | 99.96 |
-| MNIST | ResNet20 | 0.0813 | 0.2694 | 99.21 | 100.00 |
-| SVHN | ResNet32 | 0.1389 | 0.4642 | 96.16 | 99.61 |
-| SVHN | ResNet44 | 0.1960 | 0.6586 | 96.52 | 99.60 |
-| CIFAR10 | ResNet56 | 0.2531 | 0.8530 | 93.47 | 99.86 |
-| CIFAR10 | VGG16 | 0.6296 | 15.7900 | 93.85 | 99.84 |
-| CIFAR100 | ResNet110 | 0.5100 | 1.7338 | 73.62 | 92.73 |
-| CIFAR100 | VGG19 | 0.8000 | 21.2854 | 73.49 | 91.62 |
-| ILSVRC2012 | ResNet50 | - | - | - | - |
-| ILSVRC2012 | MobileNetV2 | - | - | - | - |
-| ILSVRC2012 | ViT-Small | - | - | - | - |
+| MNIST | MLP | 0.0033 | 1.6282 | 97.16 | 99.98 |
+| MNIST | ResNet20 | 0.0813 | 0.2694 | 99.19 | 100.00 |
+| SVHN | ResNet32 | 0.1389 | 0.4642 | 96.11 | 99.61 |
+| SVHN | ResNet44 | 0.1960 | 0.6586 | 96.34 | 99.62 |
+| CIFAR10 | ResNet56 | 0.2531 | 0.8530 | 93.25 | 99.82 |
+| CIFAR10 | VGG16 | 0.6296 | 15.7900 | 93.68 | 99.83 |
+| CIFAR100 | ResNet110 | 0.5100 | 1.7338 | 73.12 | 92.87 |
+| CIFAR100 | VGG19 | 0.8000 | 21.2854 | 73.05 | 91.54 |
+| ILSVRC2012 | ResNet50 | 8.2228 | 25.5570 | - | - |
+| ILSVRC2012 | MobileNetV2 | 0.6283 | 3.5049 | - | - |
+| ILSVRC2012 | ViT-Small | 8.4826 | 21.9554 | - | - |
 
 ## Supported Datasets
 
