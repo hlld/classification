@@ -614,7 +614,7 @@ class VisionTransformer(_BaseModel):
         return x
 
     def extra_params(self):
-        return [self.pos_embed, self.cls_token]
+        return [self.cls_token, self.pos_embed]
 
 
 if __name__ == "__main__":
