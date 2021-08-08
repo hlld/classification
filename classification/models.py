@@ -603,7 +603,7 @@ class VisionTransformer(_BaseModel):
         x = self.pos_drop(x + self.pos_embed)
         x = self.layers(x)
         x = self.norm(x)
-        x = self.logits(x[:, 0])
+        x = self.logits(x[:, 0, :])
         return x
 
     def extra_params(self):

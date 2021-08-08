@@ -369,18 +369,18 @@ if __name__ == '__main__':
     parser.add_argument('--random_crop', type=float, default=0.5,
                         help='random crop')
     # Model options
-    parser.add_argument('--model_type', type=str, default='resnet20',
+    parser.add_argument('--model_type', type=str, default='resnet56',
                         help='model type')
     parser.add_argument('--depth_multiplier', type=float, default=1.0,
-                        help='channel multiplier')
+                        help='channel multiplier for MobileNet')
     parser.add_argument('--hidden_channels', type=int, default=2048,
-                        help='hidden channels of head')
+                        help='hidden channels for MLP/VGG')
     parser.add_argument('--dropout', type=float, default=0,
-                        help='dropout rate of hidden channels')
+                        help='dropout for MLP/VGG/ViT')
     parser.add_argument('--attn_drop', type=float, default=0,
-                        help='attention dropout rate')
+                        help='attention dropout for ViT')
     parser.add_argument('--drop_path', type=float, default=0,
-                        help='stochastic depth drop rate')
+                        help='stochastic depth for ViT')
     # Training options
     parser.add_argument('--weights', type=str, default='',
                         help='weights path')
