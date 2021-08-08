@@ -138,33 +138,27 @@ class InvertedResidual(nn.Module):
                  use_squeeze_excite=False):
         super(InvertedResidual, self).__init__()
         expanded_channels = int(float(in_channels) * expand_ratio)
+        layers = []
         if expanded_channels != in_channels:
-            in_module = Conv(in_channels,
-                             expanded_channels,
-                             kernel_size=1,
-                             stride=1,
-                             activation=activation)
-        else:
-            in_module = nn.Identity()
+            layers.append(Conv(in_channels,
+                               expanded_channels,
+                               kernel_size=1,
+                               stride=1,
+                               activation=activation))
+        layers.append(Conv(expanded_channels,
+                           expanded_channels,
+                           kernel_size=kernel_size,
+                           stride=stride,
+                           groups=expanded_channels,
+                           activation=activation))
         if use_squeeze_excite:
-            se_module = SqueezeExcite(expanded_channels)
-        else:
-            se_module = nn.Identity()
-        self.m = nn.Sequential(*[
-            in_module,
-            Conv(expanded_channels,
-                 expanded_channels,
-                 kernel_size=kernel_size,
-                 stride=stride,
-                 groups=expanded_channels,
-                 activation=activation),
-            se_module,
-            Conv(expanded_channels,
-                 out_channels,
-                 kernel_size=1,
-                 stride=1,
-                 activation='none')
-        ])
+            layers.append(SqueezeExcite(expanded_channels))
+        layers.append(Conv(expanded_channels,
+                           out_channels,
+                           kernel_size=1,
+                           stride=1,
+                           activation='none'))
+        self.m = nn.Sequential(*layers)
         self.shortcut = stride == 1 and in_channels == out_channels
 
     def forward(self, x):
@@ -304,18 +298,16 @@ class Mlp(nn.Module):
         super(Mlp, self).__init__()
         hidden_channels = hidden_channels or in_channels
         out_channels = out_channels or in_channels
-        self.fc1 = nn.Linear(in_channels, hidden_channels)
-        self.act = Activation(activation)
-        self.fc2 = nn.Linear(hidden_channels, out_channels)
-        self.drop = nn.Dropout(dropout)
+        self.m = nn.Sequential(*[
+            nn.Linear(in_channels, hidden_channels),
+            Activation(activation),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_channels, out_channels),
+            nn.Dropout(dropout)
+        ])
 
     def forward(self, x):
-        x = self.fc1(x)
-        x = self.act(x)
-        x = self.drop(x)
-        x = self.fc2(x)
-        x = self.drop(x)
-        return x
+        return self.m(x)
 
 
 class DropPath(nn.Module):
@@ -348,40 +340,39 @@ class ViTBlock(nn.Module):
                  drop_path=0,
                  activation='gelu'):
         super(ViTBlock, self).__init__()
-        self.norm1 = nn.LayerNorm(in_channels)
-        self.msa = Msa(in_channels,
-                       num_heads=num_heads,
-                       qkv_bias=qkv_bias,
-                       attn_drop=attn_drop,
-                       proj_drop=dropout)
-        self.drop_path = DropPath(drop_path)
-        self.norm2 = nn.LayerNorm(in_channels)
-        hidden_channels = int(in_channels * mlp_ratio)
-        self.mlp = Mlp(in_channels=in_channels,
-                       hidden_channels=hidden_channels,
-                       activation=activation,
-                       dropout=dropout)
+        self.msa = nn.Sequential(*[
+            nn.LayerNorm(in_channels),
+            Msa(in_channels,
+                num_heads=num_heads,
+                qkv_bias=qkv_bias,
+                attn_drop=attn_drop,
+                proj_drop=dropout),
+            DropPath(drop_path)
+        ])
+        self.mlp = nn.Sequential(*[
+            nn.LayerNorm(in_channels),
+            Mlp(in_channels=in_channels,
+                hidden_channels=int(in_channels * mlp_ratio),
+                activation=activation,
+                dropout=dropout),
+            DropPath(drop_path)
+        ])
 
     def forward(self, x):
-        x = x + self.drop_path(self.msa(self.norm1(x)))
-        x = x + self.drop_path(self.mlp(self.norm2(x)))
+        x = x + self.msa(x)
+        x = x + self.mlp(x)
         return x
 
 
 class PatchEmbed(nn.Module):
     def __init__(self,
                  in_channels=3,
-                 image_size=224,
                  patch_size=16,
                  embed_dim=768,
-                 flatten=True,
+                 flatten_patch=True,
                  layer_norm=False):
         super(PatchEmbed, self).__init__()
-        self.image_size = image_size
-        self.patch_size = patch_size
-        self.grid_size = image_size // patch_size
-        self.num_patches = self.grid_size ** 2
-        self.flatten = flatten
+        self.flatten_patch = flatten_patch
         self.conv = nn.Conv2d(in_channels,
                               embed_dim,
                               kernel_size=patch_size,
@@ -394,7 +385,7 @@ class PatchEmbed(nn.Module):
 
     def forward(self, x):
         x = self.conv(x)
-        if self.flatten:
+        if self.flatten_patch:
             # [n, c, h, w] to [b, n, c] format
             x = x.flatten(2, -1).transpose(1, 2)
         x = self.norm(x)

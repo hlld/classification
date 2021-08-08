@@ -503,24 +503,19 @@ class MobileNet(_BaseModel):
                                activation=activation))
             self.layers = nn.Sequential(*layers)
             hidden_channels = int(depth_multiplier * 1280)
+            logits = []
             if 'mobilenetv3' in model_type:
-                hidden_module = nn.Sequential(*[
-                    nn.Conv2d(out_channels,
-                              hidden_channels,
-                              kernel_size=1,
-                              stride=1),
-                    Activation(activation)
-                ])
-            else:
-                hidden_module = nn.Identity()
-            self.logits = nn.Sequential(*[
-                hidden_module,
-                nn.Conv2d(hidden_channels,
-                          num_classes,
-                          kernel_size=1,
-                          stride=1),
-                nn.Flatten(1, -1)
-            ])
+                logits.append(nn.Conv2d(out_channels,
+                                        hidden_channels,
+                                        kernel_size=1,
+                                        stride=1))
+                logits.append(Activation(activation))
+            logits.append(nn.Conv2d(hidden_channels,
+                                    num_classes,
+                                    kernel_size=1,
+                                    stride=1))
+            logits.append(nn.Flatten(1, -1))
+            self.logits = nn.Sequential(*logits)
         self.num_classes = num_classes
         self.model_type = model_type
         self.max_stride = 32
@@ -562,14 +557,14 @@ class VisionTransformer(_BaseModel):
         else:
             raise ValueError('Unknown type %s' % model_type)
         self.stem = PatchEmbed(in_channels=in_channels,
-                               image_size=image_size,
                                patch_size=patch_size,
                                embed_dim=embed_dim,
-                               flatten=True,
+                               flatten_patch=True,
                                layer_norm=False)
+        num_patches = (image_size // patch_size) ** 2
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.pos_embed = nn.Parameter(
-            torch.zeros(1, self.stem.num_patches + 1, embed_dim))
+            torch.zeros(1, num_patches + 1, embed_dim))
         self.pos_drop = nn.Dropout(dropout)
         # Stochastic depth decay rule
         depth_decay = [x.item() for x in torch.linspace(start=0,
@@ -612,7 +607,7 @@ class VisionTransformer(_BaseModel):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_type', type=str, default='resnet18',
+    parser.add_argument('--model_type', type=str, default='vit-small',
                         help='model type')
     parser.add_argument('--device', type=int, default=0,
                         help='cuda device')
