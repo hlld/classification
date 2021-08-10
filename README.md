@@ -22,9 +22,8 @@ This repository contains the PyTorch implementation of basic classification mode
 | CIFAR10 | VGG16 | 0.6296 | 15.7900 | 93.68 | 99.83 |
 | CIFAR100 | ResNet110 | 0.5100 | 1.7338 | 73.12 | 92.87 |
 | CIFAR100 | VGG19 | 0.8000 | 21.2854 | 73.05 | 91.54 |
-| ILSVRC2012 | ResNet50 | 8.2228 | 25.5570 | - | - |
-| ILSVRC2012 | MobileNetV2 | 0.6283 | 3.5049 | - | - |
-| ILSVRC2012 | ViT-Small | 8.4826 | 21.9554 | - | - |
+| ILSVRC2012 | ResNet50 | 8.2228 | 25.5570 | 76.43 | 93.25 |
+| ILSVRC2012 | MobileNetV2 | 0.6283 | 3.5049 | 69.55 | 89.14 |
 
 ## Supported Datasets
 
