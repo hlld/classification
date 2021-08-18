@@ -117,10 +117,15 @@ def train_network(local_rank, opt):
         if hasattr(module, 'bias'):
             if isinstance(module.bias, nn.Parameter):
                 params_bias.append(module.bias)
-    optimizer = optim.SGD(params_bias,
-                          lr=opt.initial_lr,
-                          momentum=opt.momentum,
-                          nesterov=True)
+    if opt.adam:
+        optimizer = optim.Adam(params_bias,
+                               lr=opt.initial_lr,
+                               betas=(opt.momentum, 0.999))
+    else:
+        optimizer = optim.SGD(params_bias,
+                              lr=opt.initial_lr,
+                              momentum=opt.momentum,
+                              nesterov=True)
     optimizer.add_param_group({'params': params_weight,
                                'weight_decay': opt.weight_decay})
     params_except += model.module.extra_params()
@@ -396,6 +401,8 @@ if __name__ == '__main__':
                         help='save path')
     parser.add_argument('--notest', type=bool, default=False,
                         help='only test final epoch')
+    parser.add_argument('--adam', type=bool, default=False,
+                        help='train with adam optimizer')
     parser.add_argument('--lr_steps', type=list, default=[],
                         help='learning rate decay steps')
     parser.add_argument('--cosine_lr', type=bool, default=False,
